@@ -4,7 +4,7 @@
 
 Stanza turns a poem you wrote into an animated typographic poster and an Instagram-ready reel, driven by the poem's own rhythm.
 
-Built solo for the FirstCommit hackathon. Full docs (features, setup, architecture, AI disclosure) arrive in Phase 8.
+A solo portfolio project. Full docs (features, setup, architecture, AI disclosure) arrive in Phase 8.
 
 ## Quick start
 
