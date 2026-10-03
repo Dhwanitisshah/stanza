@@ -12,8 +12,8 @@ export const TENDER: MoodPreset = {
     { background: "#EEF0EA", ink: "#2F3A33", accent: "#7F9C84", accent2: "#B4C7B3" },
   ],
   typography: {
-    display: '"Cormorant Garamond", Georgia, serif',
-    body: '"Inter", system-ui, sans-serif',
+    display: 'var(--font-cormorant), "Cormorant Garamond", Georgia, serif',
+    body: 'var(--font-inter), "Inter", system-ui, sans-serif',
     weight: 500,
     lineHeight: 1.35,
     align: "left",
