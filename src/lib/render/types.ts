@@ -48,6 +48,11 @@ export interface FooterLine {
   x: number; // left edge
   y: number; // baseline
   font: string;
+  /**
+   * Letter-spaced text is drawn one character at a time (canvas letterSpacing is not reliable across browsers),
+   * at positions worked out here, once. Absent for ordinary text.
+   */
+  glyphs?: { text: string; x: number }[];
 }
 
 export interface LayoutPage {

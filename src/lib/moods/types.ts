@@ -39,17 +39,24 @@ export interface Typography {
   display: string;
   body: string;
   weight: number;
+  /** The whole poem is set in italic (and a title above it follows). */
+  italic?: boolean;
   /** Row height as a multiple of the font size. */
   lineHeight: number;
   align: "left" | "center";
 }
 
-/** The quiet title and byline in the footer of the final frame. */
+/**
+ * The quiet footer of the final frame, the same in every mood: a letter-spaced UPPERCASE title over an italic
+ * byline, both in the mood's own typeface. Only the weights and the tracking vary.
+ */
 export interface FooterStyle {
-  font: "display" | "body";
+  /** Weight of the title. */
   weight: number;
-  italic: boolean;
-  uppercase: boolean;
+  /** Weight of the (italic) byline. */
+  bylineWeight: number;
+  /** Letter-spacing of the title, in em. */
+  trackingEm: number;
 }
 
 export interface MoodPreset {

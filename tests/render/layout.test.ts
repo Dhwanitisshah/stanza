@@ -348,11 +348,12 @@ describe("layout: verse-aware sizing", () => {
     for (const pages of pagesOfStanza.values()) expect(pages.size).toBe(1);
   });
 
-  it("(b) pages use the largest size that needs no more pages than the minimum size does", () => {
+  it("(b) paged poems never go below the minimum size, and never wrap", () => {
     const poem = Array.from({ length: 40 }, (_, i) => "la la la" + (i % 4 === 3 && i < 39 ? "\n" : "")).join("\n");
     const result = run(poem, "reel");
-    // Short lines at 44px: the page count is set by height, so the size can grow until the count would rise.
-    expect(result.fontSize).toBeGreaterThan(LAYOUT_CONFIG.minFontSize);
+    expect(result.fontSize).toBeGreaterThanOrEqual(LAYOUT_CONFIG.minFontSize);
+    expect(layoutStats(result).wrappedLines).toBe(0);
+    expect(result.pages.length).toBeGreaterThan(1);
   });
 
   it("(c) a Whitman-length line still wraps, at the minimum size, with a hanging indent", () => {

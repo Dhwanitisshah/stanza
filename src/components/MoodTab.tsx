@@ -53,7 +53,7 @@ export function MoodTab({
                   color: palette.ink,
                   fontFamily: preset.typography.display,
                   fontWeight: preset.typography.weight,
-                  fontStyle: preset.footer.italic && id === "Melancholy" ? "italic" : "normal",
+                  fontStyle: preset.typography.italic ? "italic" : "normal",
                 }}
               >
                 A<span style={{ color: palette.accent }}>a</span>

@@ -25,9 +25,9 @@ const cormorant = Cormorant_Garamond({
 });
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"], preload: false });
 const spaceGrotesk = Space_Grotesk({ variable: "--font-space-grotesk", subsets: ["latin"], weight: ["500", "700"], preload: false });
-const fraunces = Fraunces({ variable: "--font-fraunces", subsets: ["latin"], weight: ["500", "800"], preload: false });
-const dmSerif = DM_Serif_Display({ variable: "--font-dm-serif", subsets: ["latin"], weight: "400", preload: false });
-const spaceMono = Space_Mono({ variable: "--font-space-mono", subsets: ["latin"], weight: ["400", "700"], preload: false });
+const fraunces = Fraunces({ variable: "--font-fraunces", subsets: ["latin"], weight: ["500", "800"], style: ["normal", "italic"], preload: false });
+const dmSerif = DM_Serif_Display({ variable: "--font-dm-serif", subsets: ["latin"], weight: "400", style: ["normal", "italic"], preload: false });
+const spaceMono = Space_Mono({ variable: "--font-space-mono", subsets: ["latin"], weight: ["400", "700"], style: ["normal", "italic"], preload: false });
 
 export const metadata: Metadata = {
   title: "Stanza",

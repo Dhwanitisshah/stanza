@@ -244,7 +244,9 @@ export function renderFrame(ctx: FrameContext, scene: Scene, t: number, resource
     for (let i = 0; i < index.footer.length; i++) {
       const line = index.footer[i];
       ctx.font = line.font;
-      ctx.fillText(line.text, line.x, line.y);
+      const glyphs = line.glyphs;
+      if (glyphs) for (let g = 0; g < glyphs.length; g++) ctx.fillText(glyphs[g].text, glyphs[g].x, line.y);
+      else ctx.fillText(line.text, line.x, line.y);
     }
   }
   ctx.restore();

@@ -13,14 +13,17 @@ export interface FontSpec {
 export const fontString = ({ family, weight, italic, size }: FontSpec): string =>
   `${italic ? "italic " : ""}${weight} ${size}px ${family}`;
 
-export const FOOTER_FONT_SIZE = 30;
+/** Footer type sizes in px at 1080 wide: a small tracked title over a slightly larger italic byline. */
+export const FOOTER_TITLE_SIZE = 24;
+export const FOOTER_BYLINE_SIZE = 28;
 
-/** Every font the mood draws with: poem text, emphasis, and the footer. Used to preload before measuring. */
+/** Every font the mood draws with: poem text, emphasis, and the footer's title and byline. Preloaded before measuring. */
 export function moodFontSpecs(mood: MoodPreset): FontSpec[] {
   const { typography, emphasis, footer } = mood;
   return [
-    { family: typography.display, weight: typography.weight, italic: false, size: 16 },
+    { family: typography.display, weight: typography.weight, italic: typography.italic ?? false, size: 16 },
     { family: typography.display, weight: emphasis.weight, italic: emphasis.italic, size: 16 },
-    { family: footer.font === "display" ? typography.display : typography.body, weight: footer.weight, italic: footer.italic, size: 16 },
+    { family: typography.display, weight: footer.weight, italic: false, size: 16 },
+    { family: typography.display, weight: footer.bylineWeight, italic: true, size: 16 },
   ];
 }

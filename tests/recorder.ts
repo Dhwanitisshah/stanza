@@ -1,3 +1,4 @@
+import type { FooterLine, Layout } from "@/lib/render/types";
 import type { FrameContext } from "@/lib/render/renderFrame";
 
 export interface DrawCall {
@@ -100,3 +101,27 @@ export class RecordingContext {
     return this.calls.filter((c) => c.op === "fillRect");
   }
 }
+
+/** "text|x" for every piece of the title block and footer, glyph by glyph: how to tell them from the poem's own text. */
+export function footerKeys(layout: Layout): Set<string> {
+  const keys = new Set<string>();
+  for (const line of [...(layout.title ? [layout.title] : []), ...layout.footer]) {
+    if (line.glyphs) for (const g of line.glyphs) keys.add(`${g.text}|${g.x}`);
+    else keys.add(`${line.text}|${line.x}`);
+  }
+  return keys;
+}
+
+/** The poem's own fillText calls: the title above it and the footer are filtered out. */
+export function poemCalls(ctx: RecordingContext, scene: { layout: Layout }): DrawCall[] {
+  const skip = footerKeys(scene.layout);
+  return ctx.texts().filter((call) => !skip.has(`${call.args[0]}|${call.args[1]}`));
+}
+
+/** The calls that draw one footer or title line (tracked lines are one call per character). */
+export function callsOfLine(ctx: RecordingContext, line: FooterLine): DrawCall[] {
+  return ctx.texts().filter((call) => call.font === line.font && call.args[2] === line.y);
+}
+
+/** The text a footer or title line actually put on the canvas. */
+export const drawnText = (ctx: RecordingContext, line: FooterLine): string => callsOfLine(ctx, line).map((c) => String(c.args[0])).join("");

@@ -8,7 +8,7 @@ import type { FormatId, Scene } from "@/lib/render/types";
 import { TIMING } from "@/lib/timeline/config";
 import { LAMP_ABAB } from "../fixtures/poems";
 import { monospace, prepare } from "../helpers";
-import { RecordingContext } from "../recorder";
+import { callsOfLine, drawnText, footerKeys, poemCalls, RecordingContext } from "../recorder";
 
 const sceneOf = (poem: string, format: FormatId = "reel"): Scene => {
   const { prosody, analysis } = prepare(poem);
@@ -22,10 +22,7 @@ const draw = (scene: Scene, t: number, resources?: FrameResources) => {
 };
 
 /** The poem's own text calls: the footer (title, byline) is drawn after the words, so it is filtered out. */
-const body = (ctx: RecordingContext, scene: Scene) => {
-  const footer = new Set(scene.layout.footer.map((line) => `${line.text}|${line.x}`));
-  return ctx.texts().filter((call) => !footer.has(`${call.args[0]}|${call.args[1]}`));
-};
+const body = (ctx: RecordingContext, scene: Scene) => poemCalls(ctx, scene);
 
 const lamp = sceneOf(LAMP_ABAB);
 const fortyLines = Array.from({ length: 40 }, (_, i) => `the quiet rain keeps falling slow ${i}` + (i % 4 === 3 ? "\n" : "")).join("\n");
@@ -304,18 +301,22 @@ describe("frame index", () => {
   });
 });
 
-describe("renderFrame: the footer (title and byline)", () => {
+describe("renderFrame: the footer (tracked title over an italic byline)", () => {
   // The title is whatever the USER set or accepted; here a typical accepted suggestion.
-  const withByline = (poem: string, byline?: string, title: string | null = "A Patient Moon") => {
+  const withByline = (poem: string, byline?: string, title: string | null = "A Patient Moon", format: FormatId = "reel") => {
     const { prosody, analysis } = prepare(poem);
-    return buildScene({ prosody, analysis, title: title ?? undefined, byline, format: "reel", speed: 1, measureText: monospace });
+    return buildScene({ prosody, analysis, title: title ?? undefined, byline, format, speed: 1, measureText: monospace });
   };
   const scene = withByline(LAMP_ABAB, "\u2014 Dhwanit");
+  const footerDraws = (s: Scene, t: number) => {
+    const keys = footerKeys(s.layout);
+    return draw(s, t).texts().filter((c) => keys.has(`${c.args[0]}|${c.args[1]}`));
+  };
+  const expectedFooterDraws = (s: Scene) => s.layout.footer.reduce((n, line) => n + (line.glyphs?.length ?? 1), 0);
 
   it("is invisible while the poem is still being performed", () => {
     const lastAppear = scene.timeline.events.filter((e) => e.type === "appear").pop()!;
-    const before = draw(scene, lastAppear.start + lastAppear.duration).texts();
-    expect(before.map((c) => c.args[0])).not.toContain(scene.layout.footer[0].text);
+    expect(footerDraws(scene, lastAppear.start + lastAppear.duration)).toHaveLength(0);
   });
 
   it("fades in during the final hold and is quiet (never full strength)", () => {
@@ -324,35 +325,76 @@ describe("renderFrame: the footer (title and byline)", () => {
     expect(footerEvent.start).toBeGreaterThan(lastAppear.start + lastAppear.duration - 1);
     expect(footerEvent.start + footerEvent.duration).toBeLessThanOrEqual(scene.timeline.totalMs);
 
-    const footerCalls = (t: number) => draw(scene, t).texts().filter((c) => scene.layout.footer.some((l) => l.text === c.args[0]));
-    expect(footerCalls(footerEvent.start - 1)).toHaveLength(0);
-    const mid = footerCalls(footerEvent.start + footerEvent.duration / 2);
-    const end = footerCalls(scene.timeline.totalMs);
-    expect(mid).toHaveLength(2);
+    expect(footerDraws(scene, footerEvent.start - 1)).toHaveLength(0);
+    const mid = footerDraws(scene, footerEvent.start + footerEvent.duration / 2);
+    const end = footerDraws(scene, scene.timeline.totalMs);
+    expect(mid).toHaveLength(expectedFooterDraws(scene));
     expect(mid[0].alpha).toBeGreaterThan(0);
     expect(mid[0].alpha).toBeLessThan(end[0].alpha);
     expect(end[0].alpha).toBeGreaterThan(0.3);
     expect(end[0].alpha).toBeLessThan(1);
   });
 
-  it("draws the title above the byline, inside the safe area, using the footer font", () => {
+  it("puts an UPPERCASE title over an italic byline", () => {
     const [title, byline] = scene.layout.footer;
-    expect(title.text).toBe("A Patient Moon");
-    expect(byline.text).toBe("\u2014 Dhwanit");
+    expect(title.text).toBe("A PATIENT MOON");
+    expect(byline.text).toBe("\u2014 Dhwanit"); // the byline keeps its case
     expect(title.y).toBeLessThan(byline.y);
+    expect(title.font).not.toContain("italic");
+    expect(byline.font).toContain("italic");
+  });
+
+  it("letter-spaces the title: one drawn character at a time, each further right than the last, with gaps", () => {
+    const [title] = scene.layout.footer;
+    expect(title.glyphs).toBeDefined();
+    const xs = title.glyphs!.map((g) => g.x);
+    for (let i = 1; i < xs.length; i++) expect(xs[i]).toBeGreaterThan(xs[i - 1]);
+    // Each character is 0.6em wide in the test font; the step between characters is wider by the tracking.
+    const px = Number(/(\d+(?:\.\d+)?)px/.exec(title.font)![1]);
+    const step = xs[1] - xs[0];
+    expect(step).toBeGreaterThan(px * 0.6 + 0.1 * px);
+    const ctx = draw(scene, scene.timeline.totalMs);
+    expect(drawnText(ctx, title)).toBe("A PATIENT MOON");
+    expect(callsOfLine(ctx, title)).toHaveLength(title.text.length);
+  });
+
+  it("draws the byline in one piece, in italic, last", () => {
+    const [, byline] = scene.layout.footer;
+    const ctx = draw(scene, scene.timeline.totalMs);
+    const texts = ctx.texts();
+    expect(texts[texts.length - 1].args[0]).toBe("\u2014 Dhwanit");
+    expect(texts[texts.length - 1].font).toBe(byline.font);
+  });
+
+  it("uses the mood's own typeface for the footer", () => {
+    const { prosody, analysis } = prepare(LAMP_ABAB);
+    for (const id of MOOD_IDS) {
+      const built = buildScene({ prosody, analysis, title: "A Patient Moon", byline: "me", mood: id, format: "reel", speed: 1, measureText: monospace });
+      const family = MOOD_PRESETS[id].typography.display;
+      for (const line of built.layout.footer) expect(line.font, id).toContain(family);
+    }
+  });
+
+  it("Reel: the footer stays inside the Instagram-safe area, and the poem keeps clear of it", () => {
     const safe = scene.layout.safeArea;
     for (const line of scene.layout.footer) {
       expect(line.x).toBeGreaterThanOrEqual(safe.x);
       expect(line.y).toBeLessThanOrEqual(safe.y + safe.height);
     }
-    const calls = draw(scene, scene.timeline.totalMs).texts();
-    expect(calls[calls.length - 1].font).toBe(byline.font);
-    expect(calls[calls.length - 2].font).toBe(title.font);
-  });
-
-  it("keeps the poem above the footer strip", () => {
     const lowestWord = Math.max(...scene.layout.pages.flatMap((p) => p.words.map((w) => w.box.y + w.box.height)));
     expect(lowestWord).toBeLessThanOrEqual(scene.layout.footer[0].y);
+  });
+
+  it("Post: the footer sits lower, in the bottom margin, and the poem keeps the whole safe area", () => {
+    const post = withByline(LAMP_ABAB, "\u2014 Dhwanit", "A Patient Moon", "post");
+    const safe = post.layout.safeArea;
+    for (const line of post.layout.footer) {
+      expect(line.y).toBeGreaterThan(safe.y + safe.height); // below the safe area, still on the canvas
+      expect(line.y).toBeLessThan(post.layout.height);
+    }
+    const lowestWord = Math.max(...post.layout.pages.flatMap((p) => p.words.map((w) => w.box.y + w.box.height)));
+    expect(lowestWord).toBeLessThanOrEqual(safe.y + safe.height + 1e-6);
+    expect(lowestWord).toBeLessThan(post.layout.footer[0].y);
   });
 
   it("shows only the title when there is no byline, and only the byline when there is no title", () => {
@@ -375,20 +417,26 @@ describe("renderFrame: the footer (title and byline)", () => {
     expect(withByline(LAMP_ABAB, "\u2014 someone").layout.fontSize).toBe(plain.layout.fontSize);
   });
 
-  it("shrinks, then shortens, a title that is too long", () => {
+  it("shrinks, then shortens, a title that is too long, and still fits", () => {
     const { prosody, analysis } = prepare(LAMP_ABAB);
     const long = "word ".repeat(60).trim();
     const built = buildScene({ prosody, analysis, title: long, format: "reel", speed: 1, measureText: monospace });
     const [line] = built.layout.footer;
     const safe = built.layout.safeArea;
-    expect(monospace(line.text, line.font)).toBeLessThanOrEqual(safe.width + 1e-6);
+    const last = line.glyphs![line.glyphs!.length - 1];
+    expect(last.x + monospace(last.text, line.font)).toBeLessThanOrEqual(safe.x + safe.width + 1e-6);
     expect(line.text.endsWith("\u2026")).toBe(true);
+    expect(line.text.length).toBeLessThan(long.length);
   });
 
-  it("is uppercase for moods that ask for it", () => {
+  it("is the same treatment in every mood: uppercase tracked title, italic byline", () => {
     const { prosody, analysis } = prepare(LAMP_ABAB);
-    const defiant = buildScene({ prosody, analysis, title: "A Patient Moon", mood: "Defiant", byline: "\u2014 me", format: "reel", speed: 1, measureText: monospace });
-    expect(defiant.layout.footer.map((l) => l.text)).toEqual(["A PATIENT MOON", "\u2014 ME"]);
+    for (const id of MOOD_IDS) {
+      const built = buildScene({ prosody, analysis, title: "A Patient Moon", mood: id, byline: "\u2014 me", format: "reel", speed: 1, measureText: monospace });
+      expect(built.layout.footer.map((l) => l.text), id).toEqual(["A PATIENT MOON", "\u2014 me"]);
+      expect(built.layout.footer[0].glyphs, id).toBeDefined();
+      expect(built.layout.footer[1].font, id).toContain("italic");
+    }
   });
 });
 
@@ -468,9 +516,13 @@ describe("renderFrame: all six moods", () => {
       for (const call of final) expect([scene.layout.font, scene.layout.emphasisFont]).toContain(call.font);
     });
 
-    it("finishes with the footer drawn last", () => {
-      const texts = draw(scene, scene.timeline.totalMs).texts();
-      expect(texts.slice(-2).map((c) => c.args[0])).toEqual(scene.layout.footer.map((l) => l.text));
+    it("finishes with the footer drawn last (title, then byline)", () => {
+      const ctx = draw(scene, scene.timeline.totalMs);
+      const [title, byline] = scene.layout.footer;
+      expect(drawnText(ctx, title)).toBe(title.text);
+      expect(drawnText(ctx, byline)).toBe(byline.text);
+      const texts = ctx.texts();
+      expect(texts[texts.length - 1].args[0]).toBe(byline.text);
     });
   });
 });

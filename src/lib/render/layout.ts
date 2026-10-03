@@ -2,7 +2,7 @@
 // `measureText` is injected so tests (and the CLI) run without a browser; the app passes a canvas-backed one.
 import type { MoodPreset } from "@/lib/moods/types";
 import type { PublicProsody } from "@/lib/prosody";
-import { FOOTER_FONT_SIZE, fontString } from "./fonts";
+import { FOOTER_BYLINE_SIZE, FOOTER_TITLE_SIZE, fontString } from "./fonts";
 import type { FooterLine, FormatId, Layout, LayoutPage, MeasureText, Piece, PlacedWord, Rect, TitlePlacement } from "./types";
 
 export const FORMATS: Record<FormatId, { width: number; height: number }> = {
@@ -26,13 +26,18 @@ export const LAYOUT_CONFIG = {
   absoluteMinFontSize: 12,
   /** Wrapped rows are indented by this many em (left-aligned moods only). */
   hangingIndentEm: 1,
-  /** Bottom strip of the safe area kept free on every page for the title and byline. */
-  footerReserve: 120,
-  /** Gap between the last footer baseline and the bottom of the safe area. */
-  footerBaselineInset: 12,
-  footerLineHeightEm: 1.4,
-  /** The footer shrinks to fit a long title, but never below this. */
-  footerMinFontSize: 18,
+  /**
+   * Bottom strip kept free of poem text for the footer. A Reel keeps the footer INSIDE the Instagram-safe
+   * area (its own UI covers the bottom 340px), so the poem makes room for it. A Post has no such UI, so the
+   * footer sits lower, in the bottom margin, and the poem keeps the whole safe area.
+   */
+  footerReserve: { reel: 120, post: 0 },
+  /** Where the last footer baseline sits: above the bottom of the safe area (Reel), or above the canvas edge (Post). */
+  footerBaselineInset: { reel: 12, post: 56 },
+  /** Distance between the title and byline baselines. */
+  footerLineGap: 42,
+  /** The footer shrinks to fit a long title, but never below this fraction of its size. */
+  footerMinScale: 0.7,
   /** Where the baseline sits in an em box (most fonts: ascent is about 80% of the font size). */
   ascentRatio: 0.8,
   /** A title above the poem is drawn this much larger than the poem, and sits one em above the first stanza. */
@@ -181,7 +186,7 @@ function wrapLine(
 
 function metricsFor(size: number, mood: MoodPreset, safe: Rect, measure: MeasureText, titleText: string | null): Metrics {
   const family = mood.typography.display;
-  const font = fontString({ family, weight: mood.typography.weight, italic: false, size });
+  const font = fontString({ family, weight: mood.typography.weight, italic: mood.typography.italic ?? false, size });
   const emphasisFont = fontString({ family, weight: mood.emphasis.weight, italic: mood.emphasis.italic, size: size * mood.emphasis.scale });
   const indent = mood.typography.align === "left" ? LAYOUT_CONFIG.hangingIndentEm * size : 0;
   return {
@@ -201,7 +206,7 @@ function metricsFor(size: number, mood: MoodPreset, safe: Rect, measure: Measure
 /** The title is set in the poem's typeface, a little larger, and shrunk (then cut) to fit one row. */
 function titleMetrics(text: string | null, size: number, mood: MoodPreset, maxWidth: number, measure: MeasureText) {
   if (!text) return { title: null, titleHeight: 0 };
-  const spec = { family: mood.typography.display, weight: mood.typography.weight, italic: mood.footer.italic };
+  const spec = { family: mood.typography.display, weight: mood.typography.weight, italic: mood.typography.italic ?? false };
   const fitted = fitText(text, spec, size * LAYOUT_CONFIG.titleScale, size * LAYOUT_CONFIG.titleMinScale, maxWidth, measure);
   const fontSize = Number(/(\d+(?:\.\d+)?)px/.exec(fitted.font)?.[1] ?? size);
   return {
@@ -447,24 +452,70 @@ function fitText(
   return { text: (first ?? "") + "\u2026", font };
 }
 
-/** Title above byline, bottom-aligned in the safe area, aligned like the poem. */
-function footerLines(footer: { title?: string; byline?: string } | undefined, mood: MoodPreset, safe: Rect, measure: MeasureText): FooterLine[] {
+/** Width of text drawn one character at a time with extra space after each. */
+function trackedWidth(chars: string[], font: string, trackingPx: number, measure: MeasureText): number {
+  return chars.reduce((sum, ch) => sum + measure(ch, font), 0) + trackingPx * Math.max(0, chars.length - 1);
+}
+
+/**
+ * A letter-spaced line: shrinks to fit, as a last resort cuts the text and adds an ellipsis, and works out where
+ * every character goes (relative to the line's left edge).
+ */
+function fitTracked(text: string, family: string, weight: number, trackingEm: number, maxWidth: number, measure: MeasureText) {
+  const minSize = Math.ceil(FOOTER_TITLE_SIZE * LAYOUT_CONFIG.footerMinScale);
+  const fontAt = (size: number) => fontString({ family, weight, italic: false, size });
+  let chars = graphemes(text);
+  const widthAt = (size: number) => trackedWidth(chars, fontAt(size), trackingEm * size, measure);
+
+  // First shrink, down to the smallest allowed size...
+  let size = FOOTER_TITLE_SIZE;
+  while (size > minSize && widthAt(size) > maxWidth) size--;
+  // ...then, if it still does not fit, cut characters from the end and mark the cut. Each pass shortens the line.
+  while (widthAt(size) > maxWidth && chars.length > 1) {
+    chars = [...chars.slice(0, -2).filter((c) => c !== "\u2026"), "\u2026"];
+  }
+
+  const font = fontAt(size);
+  const tracking = trackingEm * size;
+  const offsets: number[] = [];
+  let cursor = 0;
+  for (const ch of chars) {
+    offsets.push(cursor);
+    cursor += measure(ch, font) + tracking;
+  }
+  return { text: chars.join(""), font, offsets, width: trackedWidth(chars, font, tracking, measure) };
+}
+
+/** Title (tracked, uppercase) above byline (italic), bottom-aligned, aligned like the poem. */
+function footerLines(
+  footer: { title?: string; byline?: string } | undefined,
+  mood: MoodPreset,
+  format: FormatId,
+  safe: Rect,
+  measure: MeasureText,
+): FooterLine[] {
   if (!footer) return [];
   const { typography, footer: style } = mood;
-  const spec = { family: style.font === "display" ? typography.display : typography.body, weight: style.weight, italic: style.italic };
-  const texts = [footer.title ?? "", footer.byline ?? ""]
-    .map((t) => t.trim().slice(0, MAX_FOOTER_CHARS))
-    .filter(Boolean)
-    .map((t) => (style.uppercase ? t.toUpperCase() : t));
+  const family = typography.display;
+  const title = (footer.title ?? "").trim().slice(0, MAX_FOOTER_CHARS).toUpperCase();
+  const byline = (footer.byline ?? "").trim().slice(0, MAX_FOOTER_CHARS);
 
-  const lineHeight = FOOTER_FONT_SIZE * LAYOUT_CONFIG.footerLineHeightEm;
-  const lastBaseline = safe.y + safe.height - LAYOUT_CONFIG.footerBaselineInset;
-  return texts.map((text, i) => {
-    const fitted = fitText(text, spec, FOOTER_FONT_SIZE, LAYOUT_CONFIG.footerMinFontSize, safe.width, measure);
-    const width = measure(fitted.text, fitted.font);
-    const x = typography.align === "center" ? safe.x + (safe.width - width) / 2 : safe.x;
-    return { text: fitted.text, x, y: lastBaseline - (texts.length - 1 - i) * lineHeight, font: fitted.font };
-  });
+  const lastBaseline =
+    format === "reel" ? safe.y + safe.height - LAYOUT_CONFIG.footerBaselineInset.reel : FORMATS.post.height - LAYOUT_CONFIG.footerBaselineInset.post;
+  const startX = (width: number) => (typography.align === "center" ? safe.x + (safe.width - width) / 2 : safe.x);
+  const lines: FooterLine[] = [];
+
+  if (byline) {
+    const fitted = fitText(byline, { family, weight: style.bylineWeight, italic: true }, FOOTER_BYLINE_SIZE, FOOTER_BYLINE_SIZE * LAYOUT_CONFIG.footerMinScale, safe.width, measure);
+    lines.push({ text: fitted.text, x: startX(measure(fitted.text, fitted.font)), y: lastBaseline, font: fitted.font });
+  }
+  if (title) {
+    const fitted = fitTracked(title, family, style.weight, style.trackingEm, safe.width, measure);
+    const x = startX(fitted.width);
+    const y = lastBaseline - (byline ? LAYOUT_CONFIG.footerLineGap : 0);
+    lines.unshift({ text: fitted.text, x, y, font: fitted.font, glyphs: Array.from(graphemes(fitted.text), (ch, i) => ({ text: ch, x: x + fitted.offsets[i] })) });
+  }
+  return lines;
 }
 
 /**
@@ -482,7 +533,7 @@ export function layout(
   const safeArea = safeAreaFor(format);
   const measure = cachedMeasure(measureText);
   // The poem lives above the footer strip.
-  const contentArea: Rect = { ...safeArea, height: safeArea.height - LAYOUT_CONFIG.footerReserve };
+  const contentArea: Rect = { ...safeArea, height: safeArea.height - LAYOUT_CONFIG.footerReserve[format] };
   const title = (extras.title ?? "").trim().slice(0, MAX_FOOTER_CHARS);
   const placement = extras.titlePlacement ?? "footer";
   const titleAbove = placement === "above" && title !== "" ? title : null;
@@ -520,6 +571,6 @@ export function layout(
     pages: layoutPages,
     pageOfLine,
     title: titleBlock,
-    footer: footerLines({ title: placement === "footer" ? title : "", byline: extras.byline }, mood, safeArea, measure),
+    footer: footerLines({ title: placement === "footer" ? title : "", byline: extras.byline }, mood, format, safeArea, measure),
   };
 }

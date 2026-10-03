@@ -91,31 +91,71 @@ describe("presets: contrast gates", () => {
     expect(inkContrast(palette)).toBeGreaterThanOrEqual(7);
   });
 
-  it.each(allPalettes)("accent colours on background are at least 3:1 ($name)", ({ palette }) => {
-    expect(contrastRatio(palette.accent, palette.background)).toBeGreaterThanOrEqual(3);
+  // A colour that is DRAWN AS TEXT or a line needs 3:1 against the paper. A colour that is a highlighter bar
+  // behind the ink does not: what has to be readable there is the ink on the bar (7:1).
+  const asBar = (mood: MoodPreset) => mood.emphasis.highlight;
+
+  it.each(allPalettes)("accent colours on background are at least 3:1, unless the accent is a highlighter bar ($name)", ({ mood, palette }) => {
+    if (asBar(mood)) expect(contrastRatio(palette.ink, palette.accent)).toBeGreaterThanOrEqual(7);
+    else expect(contrastRatio(palette.accent, palette.background)).toBeGreaterThanOrEqual(3);
     if (palette.accent2) expect(contrastRatio(palette.accent2, palette.background)).toBeGreaterThanOrEqual(3);
   });
 
-  it.each(allPalettes)("the colours actually used for emphasis and echoes are at least 3:1 ($name)", ({ mood, palette }) => {
-    const emphasisColour = palette[mood.emphasis.color] ?? palette.accent;
+  it.each(allPalettes)("the colours actually used for emphasis and echoes are readable ($name)", ({ mood, palette }) => {
     const echoColour = palette[mood.echo.color] ?? palette.accent;
-    expect(contrastRatio(emphasisColour, palette.background)).toBeGreaterThanOrEqual(3);
     expect(contrastRatio(echoColour, palette.background)).toBeGreaterThanOrEqual(3);
+    if (asBar(mood)) {
+      // Highlight emphasis: the word stays ink, the bar is the accent. Ink on the bar is the test.
+      expect(mood.emphasis.color).toBe("ink");
+      expect(contrastRatio(palette.ink, palette.accent)).toBeGreaterThanOrEqual(7);
+    } else {
+      const emphasisColour = palette[mood.emphasis.color] ?? palette.accent;
+      expect(contrastRatio(emphasisColour, palette.background)).toBeGreaterThanOrEqual(3);
+    }
   });
 
-  it.each(allPalettes)("a highlighter bar stays readable: ink on the bar is at least 3:1 ($name)", ({ mood, palette }) => {
-    if (!mood.emphasis.highlight) return;
-    expect(contrastRatio(palette.ink, palette.accent)).toBeGreaterThanOrEqual(3);
-    expect(contrastRatio(palette.accent, palette.background)).toBeGreaterThanOrEqual(3);
+  it("gives Restless a real yellow highlighter, and ink on it passes 7:1", () => {
+    for (const palette of MOOD_PRESETS.Restless.palettes) {
+      const [r, g, b] = hexToRgb(palette.accent);
+      expect(r).toBeGreaterThan(200);
+      expect(g).toBeGreaterThan(190);
+      expect(b).toBeLessThan(120); // yellow: lots of red and green, little blue
+      expect(contrastRatio(palette.ink, palette.accent)).toBeGreaterThanOrEqual(7);
+    }
   });
 
-  it("fixes the old pale echo colour: nothing is lighter than 3:1 on its background any more", () => {
+  it("fixes the old pale echo colour: nothing drawn as text or a line is lighter than 3:1 on its background", () => {
     // The Phase 3b problem: #D9BE98 on #F4EFE6 is about 1.5:1.
     expect(contrastRatio("#D9BE98", "#F4EFE6")).toBeLessThan(3);
     const worst = Math.min(
-      ...allPalettes.flatMap(({ palette }) => [palette.accent, palette.accent2 ?? palette.accent].map((c) => contrastRatio(c, palette.background))),
+      ...allPalettes.flatMap(({ mood, palette }) =>
+        [asBar(mood) ? null : palette.accent, palette.accent2].filter((c): c is string => typeof c === "string").map((c) => contrastRatio(c, palette.background)),
+      ),
     );
     expect(worst).toBeGreaterThanOrEqual(3);
+  });
+
+  it("warmed Tender and Joyful toward the design: the sampled design colours are the first palettes", () => {
+    expect(MOOD_PRESETS.Tender.palettes[0].background).toBe("#F3E9DC");
+    expect(MOOD_PRESETS.Joyful.palettes[0].background).toBe("#F6D86B");
+  });
+
+  it("uses the line spacing from the design", () => {
+    const heights = Object.fromEntries(MOOD_IDS.map((id) => [id, MOOD_PRESETS[id].typography.lineHeight]));
+    expect(heights).toEqual({ Tender: 1.6, Melancholy: 1.65, Defiant: 1.25, Joyful: 1.5, Reverent: 1.55, Restless: 1.5 });
+  });
+
+  it("sets Melancholy in italic, and nobody else", () => {
+    expect(MOOD_PRESETS.Melancholy.typography.italic).toBe(true);
+    for (const id of MOOD_IDS.filter((m) => m !== "Melancholy")) expect(MOOD_PRESETS[id].typography.italic).toBeFalsy();
+  });
+
+  it("gives every mood the same footer treatment: a tracked title over an italic byline", () => {
+    for (const p of presets) {
+      expect(p.footer.trackingEm, p.id).toBeGreaterThan(0.1);
+      expect(p.footer.weight, p.id).toBeGreaterThan(0);
+      expect(p.footer.bylineWeight, p.id).toBeGreaterThan(0);
+    }
   });
 });
 

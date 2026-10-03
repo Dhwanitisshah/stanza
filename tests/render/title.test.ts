@@ -10,7 +10,7 @@ import { buildTimeline } from "@/lib/timeline/buildTimeline";
 import { TIMING } from "@/lib/timeline/config";
 import { FORTY_LINES, LAMP_ABAB } from "../fixtures/poems";
 import { monospace, narrowSerif, prepare } from "../helpers";
-import { RecordingContext } from "../recorder";
+import { callsOfLine, drawnText, poemCalls, RecordingContext } from "../recorder";
 
 const TITLE = "A Patient Moon";
 const build = (poem: string, placement: TitlePlacement | undefined, title: string | undefined = TITLE, extra: { mood?: MoodPreset["id"]; format?: FormatId; byline?: string } = {}) => {
@@ -39,7 +39,7 @@ describe("title placement: layout", () => {
   it("footer: the title goes to the footer strip and nothing is drawn above the poem", () => {
     const scene = build(LAMP_ABAB, "footer");
     expect(scene.layout.title).toBeNull();
-    expect(scene.layout.footer.map((l) => l.text)).toEqual([TITLE]);
+    expect(scene.layout.footer.map((l) => l.text)).toEqual([TITLE.toUpperCase()]); // the footer title is tracked uppercase
   });
 
   it("hidden: no title anywhere, but the byline still shows", () => {
@@ -192,9 +192,9 @@ describe("title placement: drawing", () => {
     const hidden = build(LAMP_ABAB, "hidden");
     expect(draw(hidden, hidden.timeline.totalMs).texts().some((c) => c.args[0] === TITLE)).toBe(false);
     const footer = build(LAMP_ABAB, "footer");
-    const calls = draw(footer, footer.timeline.totalMs).texts();
-    expect(calls[calls.length - 1].args[0]).toBe(TITLE);
-    expect(calls[calls.length - 1].alpha).toBeLessThan(1); // the quiet footer
+    const ctx = draw(footer, footer.timeline.totalMs);
+    expect(drawnText(ctx, footer.layout.footer[0])).toBe(TITLE.toUpperCase());
+    expect(callsOfLine(ctx, footer.layout.footer[0])[0].alpha).toBeLessThan(1); // the quiet footer
   });
 
   it("leaves with page 0 on a paged poem", () => {
@@ -221,7 +221,7 @@ describe("title placement: every mood", () => {
     const ctx = draw(scene, scene.timeline.totalMs);
     const calls = ctx.texts();
     expect(calls.filter((c) => c.args[0] === TITLE)).toHaveLength(1);
-    const words = calls.filter((c) => c.args[0] !== TITLE && !scene.layout.footer.some((l) => l.text === c.args[0]));
+    const words = poemCalls(ctx, scene);
     expect(words).toHaveLength(scene.layout.pages[0].words.reduce((n, w) => n + w.pieces.length, 0));
     for (const call of words) expect(call.alpha).toBe(1);
   });

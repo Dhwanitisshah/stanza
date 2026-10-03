@@ -24,7 +24,7 @@ function MiniPoster({ mood, caption, className = "" }: { mood: MoodId; caption: 
       >
         <div
           className="absolute inset-x-[8%] top-[44%] -translate-y-1/2 text-[4.4cqw] leading-[1.9]"
-          style={{ fontFamily: preset.typography.display, fontWeight: preset.typography.weight, textAlign: centred ? "center" : "left" }}
+          style={{ fontFamily: preset.typography.display, fontWeight: preset.typography.weight, fontStyle: preset.typography.italic ? "italic" : "normal", textAlign: centred ? "center" : "left" }}
         >
           {LAMP_LINES.map((line) => (
             <div key={line}>{line}</div>
