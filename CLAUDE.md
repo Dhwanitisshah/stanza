@@ -106,6 +106,8 @@ Before complex logic (rhyme detection, timeline, layout, recording) give a 3-5 b
 | 7 | Deploy to Vercel, env vars, mobile check, empty/long/weird-input hardening, loading/error states | Live URL works end to end |
 | 8 | Docs: README, AI disclosure, Devpost draft, demo script | See 9 |
 
+**Phase 5 requirement: target duration control** (not built yet). Presets Auto / 7s / 15s / 30s / 60s + a custom slider. A pure function `speedForDuration(prosody, analysis, mood, targetMs)` in `lib/timeline` solves for speed, treating the lead-in and the final hold as fixed. Clamp speed to a readable range (~0.5×–2.5×); if the target is unreachable, show the minimum readable duration instead of rushing. Unit tests: the result lands within ±100 ms of the target; the clamps are respected; Auto = speed 1. This replaces the plain speed slider in the UI, and the share link stores `targetMs`.
+
 Commit at the end of every phase with a clear message, e.g. `phase 1: prosody engine + tests`.
 
 ## 9. Phase 8 deliverables
