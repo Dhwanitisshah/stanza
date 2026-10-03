@@ -305,9 +305,10 @@ describe("frame index", () => {
 });
 
 describe("renderFrame: the footer (title and byline)", () => {
-  const withByline = (poem: string, byline?: string) => {
+  // The title is whatever the USER set or accepted; here a typical accepted suggestion.
+  const withByline = (poem: string, byline?: string, title: string | null = "A Patient Moon") => {
     const { prosody, analysis } = prepare(poem);
-    return buildScene({ prosody, analysis, byline, format: "reel", speed: 1, measureText: monospace });
+    return buildScene({ prosody, analysis, title: title ?? undefined, byline, format: "reel", speed: 1, measureText: monospace });
   };
   const scene = withByline(LAMP_ABAB, "\u2014 Dhwanit");
 
@@ -336,7 +337,7 @@ describe("renderFrame: the footer (title and byline)", () => {
 
   it("draws the title above the byline, inside the safe area, using the footer font", () => {
     const [title, byline] = scene.layout.footer;
-    expect(title.text).toBe(scene.analysis.title);
+    expect(title.text).toBe("A Patient Moon");
     expect(byline.text).toBe("\u2014 Dhwanit");
     expect(title.y).toBeLessThan(byline.y);
     const safe = scene.layout.safeArea;
@@ -354,12 +355,17 @@ describe("renderFrame: the footer (title and byline)", () => {
     expect(lowestWord).toBeLessThanOrEqual(scene.layout.footer[0].y);
   });
 
-  it("shows only the title when there is no byline, and nothing for an empty title", () => {
+  it("shows only the title when there is no byline, and only the byline when there is no title", () => {
     expect(withByline(LAMP_ABAB).layout.footer).toHaveLength(1);
     expect(withByline(LAMP_ABAB, "   ").layout.footer).toHaveLength(1);
+    expect(withByline(LAMP_ABAB, "me", null).layout.footer.map((l) => l.text)).toEqual(["me"]);
+  });
+
+  it("shows no title unless the user set one: the analysis suggestion alone never reaches the poster", () => {
     const { prosody, analysis } = prepare(LAMP_ABAB);
-    const untitled = buildScene({ prosody, analysis: { ...analysis, title: "" }, format: "reel", speed: 1, measureText: monospace });
-    expect(untitled.layout.footer).toHaveLength(0);
+    expect(analysis.title).toBe("A Patient Moon"); // there IS a suggestion...
+    const untitled = buildScene({ prosody, analysis, format: "reel", speed: 1, measureText: monospace });
+    expect(untitled.layout.footer).toHaveLength(0); // ...but nothing is drawn for it
     expect(draw(untitled, untitled.timeline.totalMs).texts()).toHaveLength(textsOf(untitled, 0).length);
   });
 
@@ -372,7 +378,7 @@ describe("renderFrame: the footer (title and byline)", () => {
   it("shrinks, then shortens, a title that is too long", () => {
     const { prosody, analysis } = prepare(LAMP_ABAB);
     const long = "word ".repeat(60).trim();
-    const built = buildScene({ prosody, analysis: { ...analysis, title: long }, format: "reel", speed: 1, measureText: monospace });
+    const built = buildScene({ prosody, analysis, title: long, format: "reel", speed: 1, measureText: monospace });
     const [line] = built.layout.footer;
     const safe = built.layout.safeArea;
     expect(monospace(line.text, line.font)).toBeLessThanOrEqual(safe.width + 1e-6);
@@ -381,8 +387,8 @@ describe("renderFrame: the footer (title and byline)", () => {
 
   it("is uppercase for moods that ask for it", () => {
     const { prosody, analysis } = prepare(LAMP_ABAB);
-    const defiant = buildScene({ prosody, analysis, mood: "Defiant", byline: "\u2014 me", format: "reel", speed: 1, measureText: monospace });
-    expect(defiant.layout.footer.map((l) => l.text)).toEqual([analysis.title.toUpperCase(), "\u2014 ME"]);
+    const defiant = buildScene({ prosody, analysis, title: "A Patient Moon", mood: "Defiant", byline: "\u2014 me", format: "reel", speed: 1, measureText: monospace });
+    expect(defiant.layout.footer.map((l) => l.text)).toEqual(["A PATIENT MOON", "\u2014 ME"]);
   });
 });
 
@@ -390,7 +396,7 @@ describe("renderFrame: all six moods", () => {
   const POEMS: Record<string, string> = { lamp: LAMP_ABAB, twoStanzas: "the lamp burns low\nthe kettle hums\n\nthe rain has found\nthe wooden floor", forty: fortyLines };
   const moodScene = (poem: string, id: MoodId, format: FormatId = "reel") => {
     const { prosody, analysis } = prepare(poem);
-    return buildScene({ prosody, analysis, mood: id, byline: "\u2014 me", format, speed: 1, measureText: monospace });
+    return buildScene({ prosody, analysis, title: "A Patient Moon", mood: id, byline: "\u2014 me", format, speed: 1, measureText: monospace });
   };
 
   describe.each(MOOD_IDS)("%s", (id) => {

@@ -2,7 +2,7 @@ import "server-only";
 import { MOOD_IDS, type MoodId } from "@/lib/moods/ids";
 import type { PublicLine, PublicProsody, PublicStanza, PublicWord } from "@/lib/prosody";
 import type { Analysis } from "./schema";
-import { firstLineFragment } from "./title";
+import { suggestTitle } from "./title";
 
 // Deterministic stand-in for Gemini: same poem in, same analysis out. No network, no randomness.
 
@@ -114,7 +114,7 @@ export function fallbackAnalysis(prosody: PublicProsody): Analysis {
     mood,
     intensity: Math.min(1, Math.round((0.4 + 0.15 * hits) * 100) / 100),
     emphasis,
-    title: firstLineFragment(prosody),
+    title: suggestTitle(prosody),
     paletteVariant: paletteVariantFor(prosody),
     reading: READINGS[mood],
   };

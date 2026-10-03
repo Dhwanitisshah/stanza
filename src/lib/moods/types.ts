@@ -67,4 +67,6 @@ export interface MoodPreset {
   textureIntensity: number;
   /** Milliseconds per syllable at speed 1. */
   beatMs: number;
+  /** Smallest poem font size in px (at 1080 wide) before lines wrap or pages split. Default 44. */
+  minFontSize?: number;
 }

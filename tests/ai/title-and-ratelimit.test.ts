@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createRateLimiter, clientIp } from "@/lib/ai/rateLimit";
-import { firstLineFragment, isTitleFromPoem } from "@/lib/ai/title";
+import { isTitleFromPoem, suggestTitle } from "@/lib/ai/title";
 import { analyzePoem, toPublicProsody } from "@/lib/prosody";
-import { LAMP_ABAB } from "../fixtures/poems";
+import { LAMP_ABAB, LETTERS_AABB, TRAFFIC_FREE_VERSE } from "../fixtures/poems";
 
 const prosody = toPublicProsody(analyzePoem(LAMP_ABAB));
 
@@ -22,9 +22,53 @@ describe("isTitleFromPoem", () => {
     expect(isTitleFromPoem("the lamp burns low beside the door", prosody)).toBe(false); // 7 words
   });
 
-  it("builds a fragment from the first line", () => {
-    expect(firstLineFragment(prosody)).toBe("The lamp burns low beside the");
-    expect(firstLineFragment(toPublicProsody(analyzePoem("")))).toBe("");
+});
+
+describe("suggestTitle", () => {
+  const suggest = (poem: string) => suggestTitle(toPublicProsody(analyzePoem(poem)));
+
+  it("takes the closing phrase of the ABAB poem: from the last article", () => {
+    expect(suggest(LAMP_ABAB)).toBe("A Patient Moon");
+  });
+
+  it("works on the AABB and free-verse fixtures", () => {
+    expect(suggest(LETTERS_AABB)).toBe("The Cold"); // "but still the paper kept the cold."
+    expect(suggest(TRAFFIC_FREE_VERSE)).toBe("The Signal Lights"); // "older than the signal lights."
+  });
+
+  it("uses the last 3 words when the line has no article or determiner", () => {
+    expect(suggest("we walked home\nslowly through falling snow")).toBe("Through Falling Snow");
+  });
+
+  it("keeps at most 4 words, from the end of the phrase", () => {
+    expect(suggest("and the long grey winter afternoon")).toBe("Long Grey Winter Afternoon");
+  });
+
+  it("strips punctuation and never ends on a function word", () => {
+    expect(suggest("a light, a door, a window, the")).toBe("A Window");
+    expect(suggest('"Look at the stars!"')).toBe("The Stars");
+    expect(suggest("everything we were to")).toBeNull(); // we, were, to: all function words
+  });
+
+  it("keeps small words lowercase in the middle", () => {
+    expect(suggest("the edge of the world")).toBe("The World");
+    expect(suggest("a house of cards")).toBe("A House of Cards");
+  });
+
+  it("returns null for a last line made only of function words, and for empty poems", () => {
+    expect(suggest("the lamp burns low\nand so it is")).toBeNull();
+    expect(suggest("to be or not to be")).toBe("Not");
+    expect(suggest("")).toBeNull();
+    expect(suggest("...")).toBeNull();
+  });
+
+  it("only uses words from the poem", () => {
+    const prosody = toPublicProsody(analyzePoem(LAMP_ABAB));
+    expect(isTitleFromPoem(suggestTitle(prosody)!, prosody)).toBe(true);
+  });
+
+  it("capitalises hyphenated words and apostrophes sensibly", () => {
+    expect(suggest("a well-known don't")).toBe("A Well-Known Don't");
   });
 });
 

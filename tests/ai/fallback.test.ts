@@ -81,11 +81,16 @@ describe("fallbackAnalysis", () => {
     });
   });
 
-  it("builds the title from the poem's own first words", () => {
+  it("suggests the closing phrase of the last line as a title", () => {
     const prosody = prosodyOf(LAMP_ABAB);
     const { title } = fallbackAnalysis(prosody);
-    expect(title).toBe("The lamp burns low beside the");
-    expect(isTitleFromPoem(title, prosody)).toBe(true);
+    expect(title).toBe("A Patient Moon");
+    expect(isTitleFromPoem(title!, prosody)).toBe(true);
+  });
+
+  it("suggests null, not junk, when the last line has nothing to offer", () => {
+    expect(fallbackAnalysis(prosodyOf("the lamp burns low\nand so it is")).title).toBeNull();
+    expect(fallbackAnalysis(prosodyOf("")).title).toBeNull();
   });
 
   it("gives a mood-appropriate reading sentence", () => {

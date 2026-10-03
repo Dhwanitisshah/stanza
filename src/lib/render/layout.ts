@@ -19,7 +19,7 @@ export const LAYOUT_CONFIG = {
     reel: { top: 220, bottom: 340, side: 96 },
     post: { top: 120, bottom: 120, side: 96 },
   },
-  /** ~44px on a 1080-wide poster is about 16pt on a phone screen: the smallest comfortable size. */
+  /** The default minimum; a mood can set its own (MoodPreset.minFontSize). ~44px on a 1080-wide poster is about 16pt on a phone screen: the smallest comfortable size. */
   minFontSize: 44,
   maxFontSize: 110,
   /** Only for pathological input (e.g. one 2,000-character line): shrink past the minimum rather than overflow. */
@@ -289,7 +289,8 @@ interface Plan {
  *       those lines, with a hanging indent.
  */
 function plan(prosody: PublicProsody, emphasized: ReadonlySet<string>, mood: MoodPreset, safe: Rect, measure: MeasureText): Plan {
-  const { minFontSize, maxFontSize, absoluteMinFontSize } = LAYOUT_CONFIG;
+  const { maxFontSize, absoluteMinFontSize } = LAYOUT_CONFIG;
+  const minFontSize = mood.minFontSize ?? LAYOUT_CONFIG.minFontSize;
   const attempt = (size: number, allowSplit: boolean) => {
     const metrics = metricsFor(size, mood, safe, measure);
     const { lines, wordsFit } = wrapAll(prosody, emphasized, metrics, measure, allowSplit);

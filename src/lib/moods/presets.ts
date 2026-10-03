@@ -125,6 +125,8 @@ export const RESTLESS: MoodPreset = {
   footer: { font: "display", weight: 400, italic: false, uppercase: true },
   textureIntensity: 0.5,
   beatMs: 190,
+  // Monospace is wide: allow a smaller size so a verse line stays on one row.
+  minFontSize: 36,
 };
 
 export const MOOD_PRESETS: Record<MoodId, MoodPreset> = {

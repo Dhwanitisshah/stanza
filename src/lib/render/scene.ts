@@ -17,14 +17,16 @@ export interface SceneInput {
   preset?: MoodPreset;
   format: FormatId;
   speed: number;
+  /** The title the USER set or accepted. analysis.title is only a suggestion and is never drawn by itself. */
+  title?: string;
   /** Optional byline for the footer, e.g. "— Dhwanit". */
   byline?: string;
   measureText: MeasureText;
 }
 
-export function buildScene({ prosody, analysis, mood, preset: given, format, speed, byline, measureText }: SceneInput): Scene {
+export function buildScene({ prosody, analysis, mood, preset: given, format, speed, title, byline, measureText }: SceneInput): Scene {
   const preset = given ?? getMoodPreset(mood ?? analysis.mood);
-  const poemLayout = layout(prosody, format, preset, measureText, new Set(analysis.emphasis), { title: analysis.title, byline });
+  const poemLayout = layout(prosody, format, preset, measureText, new Set(analysis.emphasis), { title: title ?? "", byline });
   const timeline = buildTimeline(prosody, analysis, preset, speed, poemLayout.pageOfLine);
-  return { prosody, analysis, byline, mood: preset, format, speed, layout: poemLayout, timeline };
+  return { prosody, analysis, title, byline, mood: preset, format, speed, layout: poemLayout, timeline };
 }

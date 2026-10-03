@@ -132,6 +132,8 @@ export interface Timeline {
 export interface Scene {
   prosody: PublicProsody;
   analysis: Analysis;
+  /** The title the user set or accepted (analysis.title is only a suggestion). Undefined = no title on the poster. */
+  title?: string;
   /** Optional line under the title, e.g. "— Dhwanit". Shown in the footer of the final frame. */
   byline?: string;
   mood: MoodPreset;

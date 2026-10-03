@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TENDER } from "@/lib/moods/presets";
+import { MOOD_PRESETS, TENDER } from "@/lib/moods/presets";
 import type { MoodPreset } from "@/lib/moods/types";
 import { FORMATS, LAYOUT_CONFIG, layout } from "@/lib/render/layout";
 import { layoutStats } from "@/lib/render/layoutStats";
@@ -375,5 +375,31 @@ describe("layout: verse-aware sizing", () => {
 
   it("layoutStats counts lines, pages and wrapped lines", () => {
     expect(stats("a\nb\n\nc")).toEqual({ fontSize: LAYOUT_CONFIG.maxFontSize, pages: 1, lines: 3, wrappedLines: 0 });
+  });
+});
+
+describe("layout: per-mood minimum size", () => {
+  it("defaults to 44px, and Restless goes down to 36px", () => {
+    expect(TENDER.minFontSize).toBeUndefined();
+    expect(MOOD_PRESETS.Restless.minFontSize).toBe(36);
+  });
+
+  it("keeps ABAB on four unwrapped lines in Restless in Reel (monospace is wide)", () => {
+    const restless = layout(prepare(LAMP_ABAB).prosody, "reel", MOOD_PRESETS.Restless, monospace);
+    expect(layoutStats(restless)).toMatchObject({ lines: 4, wrappedLines: 0, pages: 1 });
+    expect(restless.fontSize).toBeGreaterThanOrEqual(36);
+    expect(restless.fontSize).toBeLessThan(44); // the longest line only fits below the old minimum
+  });
+
+  it("would have wrapped under the default minimum (the setting is what fixes it)", () => {
+    const strict = { ...MOOD_PRESETS.Restless, minFontSize: undefined };
+    expect(layoutStats(layout(prepare(LAMP_ABAB).prosody, "reel", strict, monospace)).wrappedLines).toBeGreaterThan(0);
+  });
+
+  it("wraps a line only when it cannot fit even at the mood's own minimum", () => {
+    const whitman = "For every atom belonging to me as good belongs to you.";
+    const result = layout(prepare(whitman).prosody, "reel", MOOD_PRESETS.Restless, monospace);
+    expect(result.fontSize).toBe(36);
+    expect(layoutStats(result).wrappedLines).toBe(1);
   });
 });

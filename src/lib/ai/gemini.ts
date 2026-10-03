@@ -55,7 +55,7 @@ Return JSON with:
 - mood: exactly one of ${MOOD_IDS.join(", ")}
 - intensity: 0 (subdued) to 1 (intense)
 - emphasis: word ids (like "w3") of the words that carry the most weight, at most 2 per line, using only ids shown below
-- title: 1 to 6 words copied exactly from the poem, in order. Never invent words.
+- title: a suggested title of 1 to 6 words copied exactly from the poem, in order. Never invent words. Use an empty string if nothing fits.
 - paletteVariant: 0, 1 or 2, a colour variation that suits the poem
 - reading: one sentence (under 25 words) describing the feeling of the poem, without quoting more than two words of it
 

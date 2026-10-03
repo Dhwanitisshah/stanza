@@ -2,7 +2,7 @@ import "server-only";
 import type { PublicProsody } from "@/lib/prosody";
 import { readingFor } from "./fallback";
 import type { Analysis } from "./schema";
-import { firstLineFragment, isTitleFromPoem } from "./title";
+import { isTitleFromPoem, suggestTitle } from "./title";
 
 const MAX_EMPHASIS_PER_LINE = 2;
 const MAX_READING_CHARS = 240;
@@ -31,12 +31,12 @@ function cleanEmphasis(ids: string[], prosody: PublicProsody): string[] {
  * Nothing the model says can put new words into the poster.
  */
 export function sanitizeAnalysis(analysis: Analysis, prosody: PublicProsody): Analysis {
-  const title = analysis.title.trim();
+  const title = (analysis.title ?? "").trim();
   const reading = analysis.reading.trim().slice(0, MAX_READING_CHARS);
   return {
     ...analysis,
     emphasis: cleanEmphasis(analysis.emphasis, prosody),
-    title: isTitleFromPoem(title, prosody) ? title : firstLineFragment(prosody),
+    title: isTitleFromPoem(title, prosody) ? title : suggestTitle(prosody),
     reading: reading || readingFor(analysis.mood),
   };
 }
