@@ -1,6 +1,6 @@
 import "server-only";
 import { MOOD_IDS, type MoodId } from "@/lib/moods/ids";
-import type { PublicProsody, PublicWord } from "@/lib/prosody";
+import type { PublicLine, PublicProsody, PublicStanza, PublicWord } from "@/lib/prosody";
 import type { Analysis } from "./schema";
 import { firstLineFragment } from "./title";
 
@@ -59,14 +59,40 @@ function pickMood(score: Record<MoodId, number>): { mood: MoodId; hits: number }
   return { mood: best, hits };
 }
 
-/** The longest word that carries a stress (function words are already demoted to 0). */
-function emphasisWordOf(words: PublicWord[]): PublicWord | undefined {
-  let best: PublicWord | undefined;
-  for (const word of words) {
-    if (!/[12]/.test(word.stress)) continue;
-    if (!best || word.core.length > best.core.length) best = word;
+/** A content word is one that still carries a stress after function words were demoted to 0. */
+const isContentWord = (word: PublicWord) => /[12]/.test(word.stress);
+
+/** The last content word of a line ("the moon at last" -> "moon"), or undefined if there is none. */
+function lineFinalContentWord(words: PublicWord[]): PublicWord | undefined {
+  for (let i = words.length - 1; i >= 0; i--) if (isContentWord(words[i])) return words[i];
+  return undefined;
+}
+
+/**
+ * How strongly a line carries the poem: 2 points per word from the winning mood's lexicon,
+ * plus 1 if the line ends a rhyme. Used to pick the one line per stanza that gets emphasis.
+ */
+function lineStrength(line: PublicLine, mood: MoodId): number {
+  const keywords = LEXICON[mood];
+  const hits = line.words.filter((w) => stems(w.core).some((form) => keywords.includes(form))).length;
+  return 2 * hits + (line.rhymeLetter === "X" ? 0 : 1);
+}
+
+/**
+ * At most one emphasised word per stanza: the line-final content word of its strongest line.
+ * Ties go to the line whose final content word is longer, then to the earlier line.
+ */
+function emphasisWordOfStanza(stanza: PublicStanza, mood: MoodId): PublicWord | undefined {
+  let best: { word: PublicWord; strength: number } | undefined;
+  for (const line of stanza.lines) {
+    const word = lineFinalContentWord(line.words);
+    if (!word) continue;
+    const strength = lineStrength(line, mood);
+    const better =
+      !best || strength > best.strength || (strength === best.strength && word.core.length > best.word.core.length);
+    if (better) best = { word, strength };
   }
-  return best;
+  return best?.word;
 }
 
 /** Small stable hash (djb2) so the same poem always picks the same palette variant. */
@@ -81,8 +107,7 @@ function paletteVariantFor(prosody: PublicProsody): number {
 export function fallbackAnalysis(prosody: PublicProsody): Analysis {
   const { mood, hits } = pickMood(scoreMoods(prosody));
   const emphasis = prosody.stanzas
-    .flatMap((s) => s.lines)
-    .map((line) => emphasisWordOf(line.words)?.id)
+    .map((stanza) => emphasisWordOfStanza(stanza, mood)?.id)
     .filter((id): id is string => id !== undefined);
 
   return {

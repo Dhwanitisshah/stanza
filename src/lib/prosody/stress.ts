@@ -10,6 +10,9 @@ const FUNCTION_WORDS = new Set([
   "but", "or", "as", "my", "your", "his", "her", "its", "our", "their", "by", "from",
   "be", "am", "are", "was", "were", "i", "me", "we", "he", "she", "you", "they",
   "him", "them", "us", "nor", "if", "than", "so",
+  // auxiliary and modal verbs
+  "been", "being", "has", "had", "have", "do", "does", "did", "will", "would",
+  "shall", "should", "can", "could", "may", "might", "must",
 ]);
 
 export function isFunctionWord(core: string): boolean {

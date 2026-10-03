@@ -237,3 +237,61 @@ describe("buildScene", () => {
     expect(scene.format).toBe("post");
   });
 });
+
+describe("layout: emphasised words", () => {
+  const phrase = (k: number) => Array.from({ length: k }, () => "word").join(" ");
+  const lastId = (poem: string) => {
+    const words = prepare(poem).prosody.stanzas.flatMap((s) => s.lines.flatMap((l) => l.words));
+    return words[words.length - 1].id;
+  };
+  const withEmphasis = (poem: string, format: FormatId = "post") =>
+    layout(prepare(poem).prosody, format, TENDER, monospace, new Set([lastId(poem)]));
+
+  it("measures an emphasised word in the emphasis font, wider than the plain one", () => {
+    const result = withEmphasis("moon");
+    const [word] = result.pages[0].words;
+    expect(word.emphasized).toBe(true);
+    expect(word.box.width).toBeCloseTo(monospace("moon", result.emphasisFont));
+    expect(word.box.width).toBeCloseTo(monospace("moon", result.font) * TENDER.emphasis.scale);
+  });
+
+  it("never lets an emphasised word cross the safe area, wherever it falls in a row", () => {
+    // Sweep line lengths so the emphasised word lands at the end of a full row for some of them.
+    for (const format of FORMAT_IDS) {
+      for (let k = 1; k <= 60; k++) expectInsideSafeArea(withEmphasis(phrase(k), format));
+    }
+  });
+
+  it("would overflow if it were measured plain: the sweep really does hit full rows", () => {
+    let wouldOverflow = 0;
+    for (let k = 1; k <= 60; k++) {
+      const poem = phrase(k);
+      const plain = layout(prepare(poem).prosody, "post", TENDER, monospace);
+      const last = plain.pages[0].words[plain.pages[0].words.length - 1].box;
+      const drawnWidth = last.width * TENDER.emphasis.scale;
+      if (last.x + drawnWidth > plain.safeArea.x + plain.safeArea.width + EPS) wouldOverflow++;
+    }
+    expect(wouldOverflow).toBeGreaterThan(0);
+  });
+
+  it("wraps an emphasised word to the next row when it no longer fits", () => {
+    let wrappedDifferently = 0;
+    for (let k = 1; k <= 60; k++) {
+      const poem = phrase(k);
+      const plain = layout(prepare(poem).prosody, "post", TENDER, monospace);
+      const emphasised = withEmphasis(poem);
+      const lastPlain = plain.pages[0].words[plain.pages[0].words.length - 1];
+      const lastEmph = emphasised.pages[0].words[emphasised.pages[0].words.length - 1];
+      if (plain.fontSize === emphasised.fontSize && lastPlain.box.y !== lastEmph.box.y) wrappedDifferently++;
+    }
+    expect(wrappedDifferently).toBeGreaterThan(0);
+  });
+
+  it("is deterministic and buildScene passes the analysis emphasis through", () => {
+    const { prosody, analysis } = prepare(LAMP_ABAB);
+    const scene = buildScene({ prosody, analysis, format: "post", speed: 1, measureText: monospace });
+    const flagged = scene.layout.pages.flatMap((p) => p.words).filter((w) => w.emphasized).map((w) => w.wordId);
+    expect(flagged).toEqual(analysis.emphasis);
+    expect(analysis.emphasis.length).toBeGreaterThan(0);
+  });
+});

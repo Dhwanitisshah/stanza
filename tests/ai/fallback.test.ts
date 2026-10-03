@@ -44,14 +44,41 @@ describe("fallbackAnalysis", () => {
     }
   });
 
-  it("emphasises the longest stressed content word of each line, never a function word", () => {
-    const prosody = prosodyOf(LAMP_ABAB);
-    const analysis = fallbackAnalysis(prosody);
-    const words = prosody.stanzas.flatMap((s) => s.lines.flatMap((l) => l.words));
-    const emphasised = analysis.emphasis.map((id) => words.find((w) => w.id === id)?.core);
+  describe("emphasis", () => {
+    const emphasisOf = (poem: string) => {
+      const prosody = prosodyOf(poem);
+      const words = prosody.stanzas.flatMap((st) => st.lines.flatMap((l) => l.words));
+      return fallbackAnalysis(prosody).emphasis.map((id) => words.find((w) => w.id === id)!.core);
+    };
 
-    expect(emphasised).toEqual(["beside", "kettle", "wooden", "somewhere"]);
-    expect(analysis.emphasis).toHaveLength(prosody.scheme.length); // one per line
+    it("picks at most one word per stanza", () => {
+      expect(emphasisOf(LAMP_ABAB)).toHaveLength(1);
+      expect(emphasisOf("the rain is cold\nI am alone\n\nthe sun is bright\nwe laugh and dance\n\nhello")).toHaveLength(3);
+      expect(emphasisOf("")).toEqual([]);
+    });
+
+    it("picks the line-final content word, skipping function words at the end of the line", () => {
+      expect(emphasisOf("we went down to the sea and it")).toEqual(["sea"]);
+    });
+
+    it("prefers the strongest line: more mood keywords, then a rhyme", () => {
+      // "lonely cold gray" are Melancholy keywords, so line 2 wins over the longer final word on line 1.
+      expect(emphasisOf("the extraordinarily wonderful afternoon\nthe lonely cold gray evening")).toEqual(["evening"]);
+      // Equal keywords (none): the rhyming lines beat the unrhymed one.
+      expect(emphasisOf("a big supercalifragilistic word\nthe moon\nthe tune")).toEqual(["moon"]);
+    });
+
+    it("uses the longest final content word only as a tie-break", () => {
+      expect(emphasisOf("a little dog\na tremendous elephant")).toEqual(["elephant"]);
+    });
+
+    it("is stable: same poem, same words", () => {
+      expect(emphasisOf(LAMP_ABAB)).toEqual(emphasisOf(LAMP_ABAB));
+    });
+
+    it("skips stanzas with no content words", () => {
+      expect(emphasisOf("the a of")).toEqual([]);
+    });
   });
 
   it("builds the title from the poem's own first words", () => {

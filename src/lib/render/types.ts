@@ -28,6 +28,8 @@ export interface Piece {
 
 export interface PlacedWord {
   wordId: string;
+  /** Measured and drawn in the mood's emphasis font (bolder and larger). */
+  emphasized: boolean;
   stanzaIndex: number;
   lineIndex: number;
   page: number;
@@ -50,6 +52,10 @@ export interface Layout {
   rowHeight: number;
   /** CSS font string for poem text at `fontSize`. */
   font: string;
+  /** CSS font string for emphasised words (the mood's weight and scale applied). */
+  emphasisFont: string;
+  /** Distance from the top of a row box to its text baseline. */
+  baseline: number;
   pages: LayoutPage[];
   /** Page index of each poem line, by global line index. */
   pageOfLine: number[];

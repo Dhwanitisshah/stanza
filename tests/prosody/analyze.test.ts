@@ -114,6 +114,14 @@ describe("analyzePoem: TESTING.md poems", () => {
     expect([1, 2]).toContain(count("fire"));
   });
 
+  it("treats auxiliary and modal verbs as unstressed (has, had, will, could...)", () => {
+    const words = analyzePoem(LAMP_ABAB).stanzas[0].lines[2].words;
+    expect(words.find((w) => w.core === "has")).toMatchObject({ stress: "0" });
+    for (const aux of ["am", "are", "was", "were", "be", "been", "has", "had", "have", "do", "does", "did", "will", "would", "shall", "should", "can", "could", "may", "might", "must"]) {
+      expect(analyzePoem(aux).stanzas[0].lines[0].words[0].stress, aux).toBe("0");
+    }
+  });
+
   it("gives unknown words like wallah a heuristic count instead of crashing", () => {
     const words = analyzePoem(EDGE_CASES.unknownWords).stanzas[0].lines[0].words;
     expect(words.find((w) => w.core === "wallah")).toMatchObject({ source: "heuristic" });

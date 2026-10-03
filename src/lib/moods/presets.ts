@@ -22,7 +22,7 @@ export const TENDER: MoodPreset = {
   entrance: "fade-rise",
   emphasis: { scale: 1.08, color: "accent", weight: 700, underline: false },
   textureIntensity: 0.25,
-  beatMs: 340,
+  beatMs: 240,
 };
 
 const PRESETS: Partial<Record<MoodId, MoodPreset>> = { Tender: TENDER };

@@ -19,7 +19,7 @@ export interface SceneInput {
 
 export function buildScene({ prosody, analysis, mood, format, speed, measureText }: SceneInput): Scene {
   const preset = getMoodPreset(mood ?? analysis.mood);
-  const poemLayout = layout(prosody, format, preset, measureText);
+  const poemLayout = layout(prosody, format, preset, measureText, new Set(analysis.emphasis));
   const timeline = buildTimeline(prosody, analysis, preset, speed, poemLayout.pageOfLine);
   return { prosody, analysis, mood: preset, format, speed, layout: poemLayout, timeline };
 }

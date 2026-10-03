@@ -31,7 +31,7 @@ export const TIMING = {
   stanzaDimMs: 700,
 
   /** How long a rhyme echo pulse lasts. */
-  echoMs: 800,
+  echoMs: 600,
 
   /** Time the old page takes to clear before the next page starts. */
   pageTransitionMs: 600,

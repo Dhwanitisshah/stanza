@@ -25,6 +25,8 @@ export const LAYOUT_CONFIG = {
   absoluteMinFontSize: 12,
   /** Wrapped rows are indented by this many em (left-aligned moods only). */
   hangingIndentEm: 1,
+  /** Where the baseline sits in an em box (most fonts: ascent is about 80% of the font size). */
+  ascentRatio: 0.8,
   /** Extra space between stanzas, in em. */
   stanzaGapEm: 0.8,
 } as const;
@@ -35,6 +37,12 @@ interface RowItem {
   wordId: string;
   text: string;
   width: number;
+  emphasized: boolean;
+}
+interface WordInput {
+  id: string;
+  text: string;
+  emphasized: boolean;
 }
 type Row = RowItem[];
 interface LineRows {
@@ -49,6 +57,7 @@ interface Block {
 interface Metrics {
   size: number;
   font: string;
+  emphasisFont: string;
   rowHeight: number;
   gap: number;
   indent: number;
@@ -102,7 +111,7 @@ function splitToFit(text: string, availFirst: number, availRest: number, font: s
 
 /** Greedy line wrapping. Returns the rows and whether every word fit a row without being split. */
 function wrapLine(
-  words: { id: string; text: string }[],
+  words: WordInput[],
   m: Metrics,
   measure: MeasureText,
   allowSplit: boolean,
@@ -117,33 +126,36 @@ function wrapLine(
   };
 
   for (const word of words) {
-    const width = measure(word.text, m.font);
+    // Emphasised words are measured in their own (bolder, larger) font so they can never overflow.
+    const font = word.emphasized ? m.emphasisFont : m.font;
+    const width = measure(word.text, font);
     const current = rows[rows.length - 1];
+    const item = (text: string, itemWidth: number): RowItem => ({ wordId: word.id, text, width: itemWidth, emphasized: word.emphasized });
     const needed = current.length ? used + m.space + width : width;
 
     if (needed <= avail()) {
       used = needed;
-      current.push({ wordId: word.id, text: word.text, width });
+      current.push(item(word.text, width));
       continue;
     }
     if (current.length) newRow();
     if (width <= avail()) {
-      rows[rows.length - 1].push({ wordId: word.id, text: word.text, width });
+      rows[rows.length - 1].push(item(word.text, width));
       used = width;
       continue;
     }
 
     wordsFit = false;
     if (!allowSplit) {
-      rows[rows.length - 1].push({ wordId: word.id, text: word.text, width });
+      rows[rows.length - 1].push(item(word.text, width));
       used = width;
       continue;
     }
-    const chunks = splitToFit(word.text, avail(), m.availNext, m.font, measure);
+    const chunks = splitToFit(word.text, avail(), m.availNext, font, measure);
     chunks.forEach((chunk, i) => {
       if (i > 0) newRow();
-      const chunkWidth = measure(chunk, m.font);
-      rows[rows.length - 1].push({ wordId: word.id, text: chunk, width: chunkWidth });
+      const chunkWidth = measure(chunk, font);
+      rows[rows.length - 1].push(item(chunk, chunkWidth));
       used = chunkWidth;
     });
   }
@@ -152,10 +164,12 @@ function wrapLine(
 
 function metricsFor(size: number, mood: MoodPreset, safe: Rect, measure: MeasureText): Metrics {
   const font = `${mood.typography.weight} ${size}px ${mood.typography.display}`;
+  const emphasisFont = `${mood.emphasis.weight} ${size * mood.emphasis.scale}px ${mood.typography.display}`;
   const indent = mood.typography.align === "left" ? LAYOUT_CONFIG.hangingIndentEm * size : 0;
   return {
     size,
     font,
+    emphasisFont,
     rowHeight: size * mood.typography.lineHeight,
     gap: LAYOUT_CONFIG.stanzaGapEm * size,
     indent,
@@ -165,12 +179,12 @@ function metricsFor(size: number, mood: MoodPreset, safe: Rect, measure: Measure
   };
 }
 
-function wrapAll(prosody: PublicProsody, m: Metrics, measure: MeasureText, allowSplit: boolean) {
+function wrapAll(prosody: PublicProsody, emphasized: ReadonlySet<string>, m: Metrics, measure: MeasureText, allowSplit: boolean) {
   let wordsFit = true;
   const lines: LineRows[] = prosody.stanzas.flatMap((stanza) =>
     stanza.lines.map((line) => {
       const wrapped = wrapLine(
-        line.words.map((w) => ({ id: w.id, text: w.text })),
+        line.words.map((w) => ({ id: w.id, text: w.text, emphasized: emphasized.has(w.id) })),
         m,
         measure,
         allowSplit,
@@ -257,11 +271,11 @@ interface Plan {
 }
 
 /** Picks the font size and page split. See the plan in the Phase 3a DEVLOG entry. */
-function plan(prosody: PublicProsody, mood: MoodPreset, safe: Rect, measure: MeasureText): Plan {
+function plan(prosody: PublicProsody, emphasized: ReadonlySet<string>, mood: MoodPreset, safe: Rect, measure: MeasureText): Plan {
   const { minFontSize, maxFontSize, absoluteMinFontSize } = LAYOUT_CONFIG;
   const attempt = (size: number, allowSplit: boolean) => {
     const metrics = metricsFor(size, mood, safe, measure);
-    const { lines, wordsFit } = wrapAll(prosody, metrics, measure, allowSplit);
+    const { lines, wordsFit } = wrapAll(prosody, emphasized, metrics, measure, allowSplit);
     const tallestLine = lines.reduce((max, l) => Math.max(max, l.rows.length * metrics.rowHeight), 0);
     const pages = pack(lines, metrics, safe.height);
     // pack() puts an over-tall line on a page of its own, so check that every page really fits.
@@ -323,6 +337,7 @@ function placeWords(blocks: Block[], m: Metrics, safe: Rect, align: "left" | "ce
             order.push(item.wordId);
             placed.set(item.wordId, {
               wordId: item.wordId,
+              emphasized: item.emphasized,
               stanzaIndex: line.stanzaIndex,
               lineIndex: line.lineIndex,
               page: pageIndex,
@@ -347,10 +362,21 @@ function placeWords(blocks: Block[], m: Metrics, safe: Rect, align: "left" | "ce
   });
 }
 
-export function layout(prosody: PublicProsody, format: FormatId, mood: MoodPreset, measureText: MeasureText): Layout {
+const NO_EMPHASIS: ReadonlySet<string> = new Set();
+
+/**
+ * @param emphasized ids of emphasised words. They are measured in the emphasis font, so they fit as drawn.
+ */
+export function layout(
+  prosody: PublicProsody,
+  format: FormatId,
+  mood: MoodPreset,
+  measureText: MeasureText,
+  emphasized: ReadonlySet<string> = NO_EMPHASIS,
+): Layout {
   const safeArea = safeAreaFor(format);
   const measure = cachedMeasure(measureText);
-  const { metrics, pages } = plan(prosody, mood, safeArea, measure);
+  const { metrics, pages } = plan(prosody, emphasized, mood, safeArea, measure);
 
   const layoutPages: LayoutPage[] = pages.map((blocks, index) => ({
     index,
@@ -367,6 +393,8 @@ export function layout(prosody: PublicProsody, format: FormatId, mood: MoodPrese
     fontSize: metrics.size,
     rowHeight: metrics.rowHeight,
     font: metrics.font,
+    emphasisFont: metrics.emphasisFont,
+    baseline: (metrics.rowHeight - metrics.size) / 2 + metrics.size * LAYOUT_CONFIG.ascentRatio,
     pages: layoutPages,
     pageOfLine,
   };
