@@ -93,7 +93,7 @@ export function PoemPanel({
         <button type="button" onClick={onRead} disabled={busy} className={`${BUTTON_PRIMARY} self-start`}>
           {busy ? "Reading..." : "Read it again"}
         </button>
-        {edited && !busy && <p className="text-sm text-accent">You changed the poem. Read it again to update everything.</p>}
+        {edited && !busy && <p className="text-sm text-muted">The poster follows your edits. Press Read it again for a fresh reading of the mood.</p>}
         {error && (
           <p role="alert" className="rounded-md border border-accent/50 bg-accent/5 px-3 py-2 text-sm">
             {error}

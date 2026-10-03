@@ -15,6 +15,11 @@ const base: ShareState = {
   lengthMs: 15000,
   echoes: false,
   emphasis: ["w1", "w9", "w21"],
+  background: { kind: "colour", colour: "#2E3A4A" },
+  pattern: "dots",
+  patternStrength: 65,
+  lineColours: { 0: "#C0392B", 3: "#2F5D8A" },
+  emphasisColour: "#E8B84A",
 };
 
 const roundTrip = (state: ShareState) => {

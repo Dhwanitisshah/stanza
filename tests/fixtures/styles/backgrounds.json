@@ -1,0 +1,63 @@
+[
+  {
+    "name": "Ruled",
+    "note": "Tender mood paper · ruled lines",
+    "mood": "Tender",
+    "pattern": "ruled",
+    "patternStrength": 55
+  },
+  {
+    "name": "Notebook",
+    "note": "Custom cream · notebook margin · line 4 in blue",
+    "mood": "Tender",
+    "background": { "kind": "colour", "colour": "#F3EFE6" },
+    "pattern": "notebook",
+    "patternStrength": 50,
+    "lineColours": { "3": "#3B6EA5" }
+  },
+  {
+    "name": "Grid on slate",
+    "note": "Custom colour #2E3A4A · text switched to light automatically",
+    "mood": "Defiant",
+    "background": { "kind": "colour", "colour": "#2E3A4A" },
+    "pattern": "grid",
+    "patternStrength": 45,
+    "important": ["moon"],
+    "emphasisColour": "#E8B84A"
+  },
+  {
+    "name": "Dots",
+    "note": "Custom sage · important words \"lamp\", \"rain\", \"moon\" in oxblood",
+    "mood": "Tender",
+    "background": { "kind": "colour", "colour": "#C9D3C3" },
+    "pattern": "dots",
+    "patternStrength": 50,
+    "important": ["lamp", "rain", "moon"],
+    "emphasisColour": "#8B1A1A"
+  },
+  {
+    "name": "Frame",
+    "note": "Reverent mood · frame · title above the poem",
+    "mood": "Reverent",
+    "titlePlacement": "Above poem",
+    "pattern": "frame",
+    "patternStrength": 60
+  },
+  {
+    "name": "Arch",
+    "note": "Custom sand · arch · a different colour on every line",
+    "mood": "Tender",
+    "background": { "kind": "colour", "colour": "#E9D3BD" },
+    "pattern": "arch",
+    "patternStrength": 55,
+    "lineColours": { "0": "#8C5A3C", "1": "#B5614C", "2": "#7A4A8A", "3": "#4F7A5A" }
+  },
+  {
+    "name": "Your photo",
+    "note": "A photo, darkened 35% so light text stays readable",
+    "mood": "Tender",
+    "background": { "kind": "image", "darken": 35, "photo": { "width": 1600, "height": 1000, "type": "image/jpeg", "name": "photo.jpg" } },
+    "important": ["moon"],
+    "emphasisColour": "#F2C94C"
+  }
+]

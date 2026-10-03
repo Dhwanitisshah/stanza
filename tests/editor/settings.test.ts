@@ -17,6 +17,11 @@ const custom: EditorSettings = {
   lengthMs: 22000,
   echoes: false,
   emphasis: [prosody.stanzas[0].lines[0].words[1].id],
+  background: { kind: "colour", colour: "#2E3A4A" },
+  pattern: "grid",
+  patternStrength: 70,
+  lineColours: { 1: "#C0392B", 3: "#2F5D8A" },
+  emphasisColour: "#E8B84A",
 };
 
 describe("effectiveAnalysis", () => {

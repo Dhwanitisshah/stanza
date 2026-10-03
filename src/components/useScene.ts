@@ -14,8 +14,11 @@ export type SceneState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "error"; message: string }
-  /** `key` changes whenever the scene really changed, so the player below can remount and restart. */
-  | { status: "ready"; scene: Scene; key: number };
+  /**
+   * `key` changes only when it is a NEW poem (different reading), never for a change of style. While a style change
+   * is still being prepared (fonts loading) the previous scene stays on screen: `refreshing` is true.
+   */
+  | { status: "ready"; scene: Scene; key: number; refreshing: boolean };
 
 interface Result {
   input: SceneInput;
@@ -55,15 +58,15 @@ export function useScene(input: SceneInput | null): SceneState {
         await loadMoodFonts(preset, poemText(input.prosody));
         if (cancelled) return;
         const scene = buildScene({ ...input, preset, measureText: createCanvasMeasure() });
-        setResult((prev) =>
-          prev?.input === input && prev.scene && sameScene(prev.scene, scene)
-            ? prev
-            : { input, scene, key: (prev?.key ?? 0) + 1 },
-        );
+        setResult((prev) => {
+          if (prev?.input === input && prev.scene && sameScene(prev.scene, scene)) return prev;
+          const newPoem = !prev || prev.input.prosody !== input.prosody;
+          return { input, scene, key: (prev?.key ?? 0) + (newPoem ? 1 : 0) };
+        });
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "Couldn't prepare the poster.";
-        setResult((prev) => ({ input, error: message, key: (prev?.key ?? 0) + 1 }));
+        setResult((prev) => ({ input, error: message, key: prev?.key ?? 0 }));
       }
     })();
 
@@ -73,7 +76,7 @@ export function useScene(input: SceneInput | null): SceneState {
   }, [input, fontEvents]);
 
   if (!input) return { status: "idle" };
-  if (!result || result.input !== input) return { status: "loading" };
-  if (result.error) return { status: "error", message: result.error };
-  return result.scene ? { status: "ready", scene: result.scene, key: result.key } : { status: "loading" };
+  if (result?.error && result.input === input) return { status: "error", message: result.error };
+  if (result?.scene) return { status: "ready", scene: result.scene, key: result.key, refreshing: result.input !== input };
+  return { status: "loading" };
 }

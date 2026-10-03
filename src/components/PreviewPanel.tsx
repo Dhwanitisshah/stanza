@@ -3,17 +3,18 @@
 import { useRef } from "react";
 import { layoutStats } from "@/lib/render/layoutStats";
 import type { Scene } from "@/lib/render/types";
+import type { ImageAsset } from "@/lib/render/image";
 import { RhythmStrip } from "./RhythmStrip";
 import { usePlayer } from "./usePlayer";
 import { formatClock } from "./ui";
 
 /**
  * The canvas is 1080 wide internally: that IS the export resolution. CSS only scales it down to fit,
- * so a preview pixel is an export pixel. Mount with `key` so each scene gets a fresh player.
+ * so a preview pixel is an export pixel. The player lives as long as the poem: a change of style keeps the playhead.
  */
-export function PreviewPanel({ scene }: { scene: Scene }) {
+export function PreviewPanel({ scene, image = null }: { scene: Scene; image?: ImageAsset | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { player, state, totalMs } = usePlayer(scene, canvasRef);
+  const { player, state, totalMs } = usePlayer(scene, canvasRef, image);
   const { width, height } = scene.layout;
   const stats = layoutStats(scene.layout);
 

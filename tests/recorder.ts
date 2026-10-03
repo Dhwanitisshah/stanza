@@ -1,3 +1,4 @@
+import type { PatternContext } from "@/lib/render/patterns";
 import type { FooterLine, Layout } from "@/lib/render/types";
 import type { FrameContext } from "@/lib/render/renderFrame";
 
@@ -125,3 +126,81 @@ export function callsOfLine(ctx: RecordingContext, line: FooterLine): DrawCall[]
 
 /** The text a footer or title line actually put on the canvas. */
 export const drawnText = (ctx: RecordingContext, line: FooterLine): string => callsOfLine(ctx, line).map((c) => String(c.args[0])).join("");
+
+export interface PathCall {
+  op: "save" | "restore" | "beginPath" | "closePath" | "moveTo" | "lineTo" | "arc" | "rect" | "clip" | "stroke" | "fill";
+  args: unknown[];
+  alpha: number;
+  stroke: string;
+  fill: string;
+  lineWidth: number;
+}
+
+/** A fake 2D context for the background patterns: logs every path call with the state it was made in. */
+export class PathRecorder {
+  readonly calls: PathCall[] = [];
+  strokeStyle = "#000";
+  fillStyle = "#000";
+  globalAlpha = 1;
+  lineWidth = 1;
+  lineCap: CanvasLineCap = "butt";
+  private stack: { strokeStyle: string; fillStyle: string; globalAlpha: number; lineWidth: number; lineCap: CanvasLineCap }[] = [];
+
+  private record(op: PathCall["op"], args: unknown[] = []) {
+    this.calls.push({ op, args, alpha: this.globalAlpha, stroke: String(this.strokeStyle), fill: String(this.fillStyle), lineWidth: this.lineWidth });
+  }
+  save() {
+    this.record("save");
+    const { strokeStyle, fillStyle, globalAlpha, lineWidth, lineCap } = this;
+    this.stack.push({ strokeStyle: String(strokeStyle), fillStyle: String(fillStyle), globalAlpha, lineWidth, lineCap });
+  }
+  restore() {
+    this.record("restore");
+    const saved = this.stack.pop();
+    if (saved) Object.assign(this, saved);
+  }
+  beginPath() {
+    this.record("beginPath");
+  }
+  closePath() {
+    this.record("closePath");
+  }
+  moveTo(...args: number[]) {
+    this.record("moveTo", args);
+  }
+  lineTo(...args: number[]) {
+    this.record("lineTo", args);
+  }
+  arc(...args: number[]) {
+    this.record("arc", args);
+  }
+  rect(...args: number[]) {
+    this.record("rect", args);
+  }
+  clip() {
+    this.record("clip");
+  }
+  stroke() {
+    this.record("stroke");
+  }
+  fill() {
+    this.record("fill");
+  }
+  transcript() {
+    return JSON.stringify(this.calls);
+  }
+  asContext(): PatternContext {
+    return this as unknown as PatternContext;
+  }
+  /** Every x,y the pattern touches (moveTo, lineTo, rect corners, arc centres with their radius). */
+  points(): { x: number; y: number; pad: number }[] {
+    const out: { x: number; y: number; pad: number }[] = [];
+    for (const c of this.calls) {
+      const a = c.args as number[];
+      if (c.op === "moveTo" || c.op === "lineTo") out.push({ x: a[0], y: a[1], pad: 0 });
+      else if (c.op === "rect") out.push({ x: a[0], y: a[1], pad: 0 }, { x: a[0] + a[2], y: a[1] + a[3], pad: 0 });
+      else if (c.op === "arc") out.push({ x: a[0], y: a[1], pad: a[2] });
+    }
+    return out;
+  }
+}

@@ -15,7 +15,8 @@ function subscribeToHash(callback: () => void) {
 function openLink(payload: string, id: number): { session?: Session; banner?: string } {
   const decoded = decodeShare(payload);
   if (decoded.ok) {
-    return { session: { id, poem: decoded.state.poem, settings: settingsFromShare(decoded.state), fromLink: true } };
+    const notice = decoded.notices.length > 0 ? decoded.notices.join(" ") : undefined;
+    return { session: { id, poem: decoded.state.poem, settings: settingsFromShare(decoded.state), fromLink: true, notice } };
   }
   if (decoded.poem) {
     // Broken or old link, but the poem is still in there: open the editor with it and say what happened.

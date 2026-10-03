@@ -2,12 +2,16 @@
 // no measuring and no string building. It is plain data derived from the scene: building it twice gives
 // identical results.
 import type { EchoStyle, EntranceStyle } from "@/lib/moods/types";
+import { luminance } from "@/lib/moods/contrast";
 import { cubicBezier } from "./easing";
 import { ENTRANCE_MS } from "./entrances";
+import { autoInk, resolvePalette } from "./styling";
 import type { FooterLine, Piece, Scene } from "./types";
 
 export interface WordSpan {
   pieces: Piece[];
+  /** The colour this word is drawn in: its line's colour if the user set one, an emphasis colour, or the ink. */
+  fill: string;
   /** Characters (code points) per piece. */
   charCounts: number[];
   /** Typewriter only: prefixes[piece][n] is the first n characters of that piece. Precomputed, so the frame loop
@@ -38,6 +42,8 @@ export interface FrameIndex {
   emphasisScale: number;
   background: string;
   ink: string;
+  /** Black overlay strength (0..0.8) over a photo background; 0 otherwise. */
+  darken: number;
   emphasisFill: string;
   underline: boolean;
   highlight: boolean;
@@ -78,7 +84,12 @@ const echoWeight = (strength: "perfect" | "near" | "repeat") => (strength === "n
 
 export function buildFrameIndex(scene: Scene): FrameIndex {
   const { mood, layout, timeline, analysis } = scene;
-  const palette = mood.palettes[Math.min(2, Math.max(0, Math.trunc(analysis.paletteVariant) || 0))];
+  const styling = scene.styling;
+  const palette = resolvePalette(mood, analysis.paletteVariant, styling);
+  const highlight = mood.emphasis.highlight;
+  // A highlighter bar takes the custom emphasis colour (or the mood's accent); its text is whichever ink reads on it.
+  const highlightFill = highlight ? (styling.emphasisColour ?? palette.accent) : palette.accent;
+  const emphasisFill = highlight ? autoInk(luminance(highlightFill)) : (styling.emphasisColour ?? palette[mood.emphasis.color] ?? palette.accent);
   const typewriter = mood.entrance === "typewriter";
 
   const spans = new Map<string, WordSpan>();
@@ -88,6 +99,7 @@ export function buildFrameIndex(scene: Scene): FrameIndex {
       const chars = word.pieces.map((piece) => Array.from(piece.text));
       const span: WordSpan = {
         pieces: word.pieces,
+        fill: word.emphasized ? emphasisFill : (styling.lineColours[word.lineIndex] ?? palette.ink),
         charCounts: chars.map((c) => c.length),
         prefixes: typewriter ? chars.map((c) => c.map((_, n) => c.slice(0, n).join("")).concat(c.join(""))) : null,
         page: page.index,
@@ -166,10 +178,11 @@ export function buildFrameIndex(scene: Scene): FrameIndex {
     emphasisScale: mood.emphasis.scale,
     background: palette.background,
     ink: palette.ink,
-    emphasisFill: palette[mood.emphasis.color] ?? palette.accent,
+    darken: styling.background.kind === "image" ? Math.min(0.8, Math.max(0, styling.background.darken)) : 0,
+    emphasisFill,
     underline: mood.emphasis.underline,
     highlight: mood.emphasis.highlight,
-    highlightFill: palette.accent,
+    highlightFill,
     echoStyle: mood.echo.style,
     echoFill: palette[mood.echo.color] ?? palette.accent,
     entranceMs: ENTRANCE_MS[mood.entrance],

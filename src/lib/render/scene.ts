@@ -8,6 +8,7 @@ import type { PublicProsody } from "@/lib/prosody";
 import { buildTimeline } from "@/lib/timeline/buildTimeline";
 import { speedForDuration } from "@/lib/timeline/speedForDuration";
 import { layout } from "./layout";
+import { DEFAULT_STYLING, type SceneStyling } from "./styling";
 import type { FormatId, MeasureText, Scene, TitlePlacement } from "./types";
 
 export interface SceneInput {
@@ -30,6 +31,8 @@ export interface SceneInput {
   byline?: string;
   /** false drops the rhyme echoes. Default true. */
   echoes?: boolean;
+  /** Background, pattern and colour overrides. Anything left out keeps its default. */
+  styling?: Partial<SceneStyling>;
   measureText: MeasureText;
 }
 
@@ -45,6 +48,7 @@ export function buildScene({
   titlePlacement = "footer",
   byline,
   echoes = true,
+  styling,
   measureText,
 }: SceneInput): Scene {
   const preset = given ?? getMoodPreset(mood ?? analysis.mood);
@@ -67,6 +71,7 @@ export function buildScene({
     format,
     speed: finalSpeed,
     echoes,
+    styling: { ...DEFAULT_STYLING, ...styling },
     length: { ...solved, speed: finalSpeed, totalMs: timeline.totalMs },
     layout: poemLayout,
     timeline,

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore, type RefObject } from "react";
-import { createPlayer, type Player, type PlayerState, type Scheduler } from "@/lib/render/player";
 import { prepareResources } from "@/lib/render/browser";
+import type { ImageAsset } from "@/lib/render/image";
+import { createPlayer, type Player, type PlayerState, type Scheduler } from "@/lib/render/player";
 import { renderFrame } from "@/lib/render/renderFrame";
 import type { Scene } from "@/lib/render/types";
 
@@ -24,26 +25,31 @@ function spaceIsFree(target: EventTarget | null): boolean {
 const FRAME_LOG_EVERY = 120;
 
 /**
- * Drives the canvas with a requestAnimationFrame loop. One player per scene: remount (change `key`) for a new scene.
+ * Drives the canvas with a requestAnimationFrame loop.
+ * - One player lives as long as the poem does. When the scene changes (a new mood, colour, length...) the player
+ *   keeps its place as the same fraction of the whole, and keeps playing if it was playing.
  * - draws only when t changes (the player guarantees it)
  * - pauses when the tab is hidden; Space toggles play
  * - prefers-reduced-motion: shows the finished poster and plays only when the user presses play
  */
-export function usePlayer(scene: Scene, canvasRef: RefObject<HTMLCanvasElement | null>): { player: Player; state: PlayerState; totalMs: number } {
+export function usePlayer(
+  scene: Scene,
+  canvasRef: RefObject<HTMLCanvasElement | null>,
+  image: ImageAsset | null = null,
+): { player: Player; state: PlayerState; totalMs: number } {
   const totalMs = scene.timeline.totalMs;
   const [reducedMotion] = useState(prefersReducedMotion);
-  const [player] = useState(() =>
-    createPlayer({ totalMs, scheduler: rafScheduler, initialT: reducedMotion ? totalMs : 0 }),
-  );
+  const [player] = useState(() => createPlayer({ totalMs, scheduler: rafScheduler, initialT: reducedMotion ? totalMs : 0 }));
 
+  // Whenever the scene (or photo) changes: new resources, new length, same place in the poem.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context) return;
+    const context = canvasRef.current?.getContext("2d");
+    if (!context) return;
 
-    const resources = prepareResources(scene);
+    const resources = prepareResources(scene, image);
     let frames = 0;
     let spent = 0;
+    player.setTotal(scene.timeline.totalMs);
     player.setDraw((t) => {
       const started = performance.now();
       renderFrame(context, scene, t, resources);
@@ -55,8 +61,12 @@ export function usePlayer(scene: Scene, canvasRef: RefObject<HTMLCanvasElement |
         }
       }
     });
-
     player.redraw();
+  }, [scene, image, canvasRef, player]);
+
+  // Once, when the preview appears: start playing, and listen for the keyboard and the tab being hidden.
+  useEffect(() => {
+    const canvas = canvasRef.current;
     if (!reducedMotion) player.play();
 
     const onVisibility = () => {
@@ -73,18 +83,18 @@ export function usePlayer(scene: Scene, canvasRef: RefObject<HTMLCanvasElement |
       player.pause();
       player.seek(Number((event as CustomEvent<number>).detail));
     };
-    canvas.addEventListener("stanza:seek", onToolSeek);
+    canvas?.addEventListener("stanza:seek", onToolSeek);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
-      canvas.removeEventListener("stanza:seek", onToolSeek);
+      canvas?.removeEventListener("stanza:seek", onToolSeek);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("keydown", onKeyDown);
       player.pause();
       player.setDraw(() => {});
     };
-  }, [scene, canvasRef, player, reducedMotion]);
+  }, [canvasRef, player, reducedMotion]);
 
   const state = useSyncExternalStore(player.subscribe, player.getState, player.getState);
   return { player, state, totalMs };

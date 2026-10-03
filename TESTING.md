@@ -160,7 +160,7 @@ Automatic first (a real browser against the production build; it checks share li
 control, touch-target sizes and accessible names):
 ```powershell
 npm run build
-npm run ui-check      # expect: 21/21 checks passed
+npm run ui-check      # expect: 58/58 checks passed
 ```
 
 Then by hand, with `npm run dev` at http://localhost:3000:
@@ -174,8 +174,8 @@ Then by hand, with `npm run dev` at http://localhost:3000:
 - [ ] Left: title, poem, "Read it again", Stanza's reading, What Stanza heard (rhyme letters, scheme, lines, words, syllables). Centre: poster + transport. Right: Mood | Text | Background | Timing, with the export buttons pinned under them.
 - [ ] The title is empty until you set one: with a suggestion available you see "Suggested: A Patient Moon" and a "Use it" button. The poster shows no title until you press it or type one.
 - [ ] Mood tab: six cards with an "Aa" swatch in each mood's own font and colours; the AI's pick is labelled "Stanza's read". Clicking a card restyles the poster. The three palette dots change the colours.
-- [ ] Text tab: title placement (Above poem / In footer / Hidden) moves the title on the poster; the byline appears small in the footer with a dash. Line colours and Important words are visible but marked "Coming next".
-- [ ] Background tab is visible and marked "Coming next". Nothing in it changes the poster yet.
+- [ ] Text tab: title placement (Above poem / In footer / Hidden) moves the title on the poster; the byline appears small in the footer with a dash. Line colours and Important words are covered in the Phase 5b section below.
+- [ ] Background tab: covered in the Phase 5b section below.
 - [ ] "Read it again" after editing the poem updates the reading, the rhyme letters and the poster.
 
 **Rhythm strip** (new)
@@ -207,6 +207,41 @@ Then by hand, with `npm run dev` at http://localhost:3000:
 - [ ] No horizontal scrolling at 360 px, on the landing page and in the editor.
 - [ ] Order is: poster, transport, rhythm strip, then tabs (Poem | Mood | Text | Backdrop | Timing), with a sticky Export / Share bar at the bottom. The tabs are visible without scrolling on a 390 x 844 screen.
 - [ ] The Poem tab holds the title, the poem box and Stanza's reading.
+
+**Phase 5b: backgrounds, patterns, colours, important words** (compare with `design/backgrounds.png`)
+
+Make a review sheet first. It drives the real app and saves a poster per style:
+```powershell
+npm run build
+npm run posters -- abab --styles=tests/fixtures/styles/backgrounds.json
+# open posters\abab\styles-sheet.png
+```
+- [ ] The sheet shows seven posters like the design: Ruled, Notebook (margin + one blue line), Grid on slate (light text chosen automatically), Dots (oxblood words), Frame, Arch (a colour per line) and a photo.
+
+Background tab, by hand:
+- [ ] Mood / Colour / Image switches the background. Colour: six swatches and a picker. The text flips between light and dark by itself (try cream, then slate, then black).
+- [ ] **Photo upload.** Try each of these and look at the poster and the message under the button:
+  - [ ] a normal **JPG**: it fills the poster (centred, cropped), and the Darken slider (0 to 80%) dims it. Light text stays readable on a bright photo once darkened.
+  - [ ] a **PNG** (try a tall one and a wide one).
+  - [ ] a **huge photo** (a 12 MP+ phone photo, or a 6000 x 4000 JPG): it opens in a couple of seconds, with no freezing and no error.
+  - [ ] a **HEIC** (an iPhone photo): a friendly message says HEIC can't be opened and to export a JPG. The poster does not change.
+  - [ ] a non-image (a .txt or .pdf) and a corrupt image: a polite message, and the poster does not change.
+  - [ ] a photo taken sideways on a phone (EXIF rotation): it appears the right way up.
+  - [ ] Remove: goes back to the mood's paper. Open the browser's Network tab while uploading: **nothing is sent anywhere**.
+- [ ] Pattern: None, Ruled, Notebook, Grid, Dots, Hatch, Frame, Arch each change the poster and have a thumbnail. Strength 0 looks the same as None; 100 is clearly stronger but the poem stays readable. The pattern is drawn in the poem's own ink colour.
+- [ ] Switching mood, background or pattern keeps the playhead where it was (scrub to the middle, then change something). It keeps playing if it was playing, and stays paused if it was paused.
+
+Text tab, by hand:
+- [ ] Line colours: each line has a colour swatch. Pick a colour and only that line changes; "Default" puts it back. Pick a colour close to the paper colour: a "Hard to read on this background" warning appears (it does not appear on a photo). Emphasised words keep the emphasis colour even on a coloured line.
+- [ ] Important words: tap words to mark or unmark them (the AI's pick starts marked). The poster and the **length** change: each marked word holds a beat and a half longer (watch the time readout). "Let Stanza choose" restores the AI's pick and the default colour.
+- [ ] Colour for important words: the picker recolours them (on Restless it is the highlighter bar, and the text stays readable on it).
+- [ ] Reset styling clears the mood, palette, background, photo, pattern, line colours, marks and their colour, but not the title, byline, format, length or echoes.
+- [ ] Editing the poem: type in the poem box. After about half a second of quiet the poster, the rhyme letters and the counts update on their own (no AI call, no button). Marks and line colours stay on the same words and lines, and drop off any that changed.
+
+Share links, version 2:
+- [ ] Style a poster (colour, pattern, line colours, marked words, emphasis colour), copy the link, open it in Incognito: it is identical.
+- [ ] With a **photo** background, copy the link: the message says the photo stays in this browser. Open the link: it opens on the mood's paper with a one-line notice. Everything else (pattern, colours, marks) is there.
+- [ ] An **old version 1 link** still opens. (Check out the 5a-era link you saved, or run `npm run ui-check`, which builds one.)
 
 **Accessibility**
 - [ ] Tab through the whole editor with the keyboard: every control gets a visible accent-coloured focus ring.

@@ -213,6 +213,119 @@ export function harness(page) {
       await page.evaluate(`document.querySelector('button[aria-label^="Use the suggested title"]').click()`);
       await settle(600);
     },
+    // ---- Styling: the Background and Text tabs, driven like a person would.
+    tab,
+    async setBackgroundColour(hex) {
+      await tab("Background");
+      await clickText('[role=group][aria-label="Background source"]', "Colour");
+      await settle(150);
+      await setNative('input[type=color][aria-label="Pick another colour"]', "HTMLInputElement", hex.toLowerCase());
+    },
+    /** Uploads a file through the real file input (the Image source must be showing). */
+    async uploadImage(path) {
+      await tab("Background");
+      await clickText('[role=group][aria-label="Background source"]', "Image");
+      await settle(150);
+      const doc = await page.send("DOM.getDocument", { depth: 0 });
+      const input = await page.send("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: 'input[type=file]' });
+      await page.send("DOM.setFileInputFiles", { files: [path], nodeId: input.result.nodeId });
+    },
+    async setDarken(percent) {
+      await setNative("#darken", "HTMLInputElement", percent);
+    },
+    async setPattern(id) {
+      await tab("Background");
+      await page.evaluate(`document.querySelector('[role=group][aria-label="Pattern"] button[data-pattern="${id}"]').click()`);
+    },
+    async setPatternStrength(value) {
+      await setNative("#pattern-strength", "HTMLInputElement", value);
+    },
+    async setLineColour(line, hex) {
+      await tab("Text");
+      await setNative(`input[type=color][aria-label="Colour for line ${line + 1}"]`, "HTMLInputElement", hex.toLowerCase());
+    },
+    async setEmphasisColour(hex) {
+      await tab("Text");
+      await setNative('input[type=color][aria-label="Colour for important words"]', "HTMLInputElement", hex.toLowerCase());
+    },
+    /** Marks exactly these words (the first occurrence of each), replacing Stanza's own pick. */
+    async setImportantWords(words) {
+      await tab("Text");
+      await page.evaluate(`(() => {
+        const group = document.querySelector('[role=group][aria-label="Important words"]');
+        const chips = [...group.querySelectorAll("button")];
+        for (const chip of chips) if (chip.getAttribute("aria-pressed") === "true") chip.click();
+      })()`);
+      await settle(100);
+      for (const word of words) {
+        await page.evaluate(`(() => {
+          const group = document.querySelector('[role=group][aria-label="Important words"]');
+          const chip = [...group.querySelectorAll("button")].find((b) => b.textContent.trim().toLowerCase() === ${JSON.stringify(word.toLowerCase())} && b.getAttribute("aria-pressed") !== "true");
+          if (!chip) throw new Error("No word " + ${JSON.stringify(word)});
+          chip.click();
+        })()`);
+        await settle(60);
+      }
+    },
+    async resetStyling() {
+      await tab("Text");
+      await clickText("[role=tabpanel]", "Reset styling");
+    },
+    async setTitlePlacement(label) {
+      await tab("Text");
+      await clickText('[role=group][aria-label="Title placement"]', label);
+    },
+    /** Builds a procedural "photo" in the page (sky, sun, hills, a little noise) and writes it to a temp file. */
+    async makePhotoFile({ width = 1600, height = 1000, type = "image/jpeg", name = "photo.jpg" } = {}) {
+      const dataUrl = await page.evaluate(`(() => {
+        const c = document.createElement("canvas");
+        c.width = ${width}; c.height = ${height};
+        const x = c.getContext("2d");
+        const sky = x.createLinearGradient(0, 0, 0, c.height);
+        sky.addColorStop(0, "#27406b"); sky.addColorStop(0.55, "#d98a5b"); sky.addColorStop(1, "#f2c48a");
+        x.fillStyle = sky; x.fillRect(0, 0, c.width, c.height);
+        x.fillStyle = "#f7e2a8"; x.beginPath(); x.arc(c.width * 0.7, c.height * 0.5, c.height * 0.08, 0, Math.PI * 2); x.fill();
+        x.fillStyle = "#1b2a2f"; x.beginPath(); x.moveTo(0, c.height);
+        for (let i = 0; i <= 20; i++) x.lineTo((i / 20) * c.width, c.height * (0.72 + 0.08 * Math.sin(i * 0.9)));
+        x.lineTo(c.width, c.height); x.fill();
+        return c.toDataURL(${JSON.stringify(type)}, 0.85);
+      })()`);
+      const { mkdtempSync, writeFileSync } = await import("node:fs");
+      const { tmpdir } = await import("node:os");
+      const { join } = await import("node:path");
+      const dir = mkdtempSync(join(tmpdir(), "stanza-photo-"));
+      const path = join(dir, name);
+      writeFileSync(path, Buffer.from(dataUrl.split(",")[1], "base64"));
+      return path;
+    },
+    /** A file that pretends to be something it is not (a HEIC photo, a text file) for the error paths. */
+    async makeFakeFile(name, contents = "not really an image") {
+      const { mkdtempSync, writeFileSync } = await import("node:fs");
+      const { tmpdir } = await import("node:os");
+      const { join } = await import("node:path");
+      const path = join(mkdtempSync(join(tmpdir(), "stanza-fake-")), name);
+      writeFileSync(path, contents);
+      return path;
+    },
+    /** Applies a style description (see tests/fixtures/styles/) to the open editor. */
+    async applyStyle(style, fixtures = {}) {
+      if (style.mood) await this.setMood(style.mood);
+      if (style.titlePlacement) await this.setTitlePlacement(style.titlePlacement);
+      const bg = style.background;
+      if (bg?.kind === "colour") await this.setBackgroundColour(bg.colour);
+      if (bg?.kind === "image") {
+        const path = fixtures.photoPath ?? (await this.makePhotoFile(bg.photo ?? {}));
+        await this.uploadImage(path);
+        await page.waitFor('!!document.querySelector("#darken")', "the photo to load", 30000);
+        if (bg.darken !== undefined) await this.setDarken(bg.darken);
+      }
+      if (style.pattern) await this.setPattern(style.pattern);
+      if (style.patternStrength !== undefined) await this.setPatternStrength(style.patternStrength);
+      for (const [line, hex] of Object.entries(style.lineColours ?? {})) await this.setLineColour(Number(line), hex);
+      if (style.important) await this.setImportantWords(style.important);
+      if (style.emphasisColour) await this.setEmphasisColour(style.emphasisColour);
+      await settle(700);
+    },
     /** Pause and jump to an exact time (the canvas listens for "stanza:seek"). */
     seek: (ms) => page.evaluate(`document.querySelector("canvas").dispatchEvent(new CustomEvent("stanza:seek", { detail: ${Number(ms)} }))`),
     totalMs: () => page.evaluate(`Number(document.querySelector("canvas").dataset.totalMs)`),

@@ -2,7 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { analyzePoem, poemProblem, type AnalyzeResult } from "@/lib/editor/analyzeClient";
-import { DEFAULT_SETTINGS, effectiveAnalysis, formatByline, toShareState, type EditorSettings } from "@/lib/editor/settings";
+import {
+  DEFAULT_SETTINGS,
+  effectiveAnalysis,
+  formatByline,
+  hasCustomStyling,
+  remapEmphasis,
+  remapLineColours,
+  resetStyling,
+  toggleImportantWord,
+  toSceneStyling,
+  toShareState,
+  type EditorSettings,
+} from "@/lib/editor/settings";
+import { getMoodPreset } from "@/lib/moods/presets";
+import { ImageProblem, loadImageAsset, type ImageAsset } from "@/lib/render/image";
+import { defaultEmphasisColour, resolvePalette } from "@/lib/render/styling";
 import { shareHash } from "@/lib/share/encode";
 import { BackgroundTab } from "./BackgroundTab";
 import { EditorTabs, type TabId } from "./EditorTabs";
@@ -32,15 +47,23 @@ export const newSettings = (patch: Partial<EditorSettings> = {}): EditorSettings
 
 const FORMAT_LABEL = { reel: "Reel · 9:16 · 1080 × 1920", post: "Post · 4:5 · 1080 × 1350" } as const;
 
+/** How long typing in the poem must pause before the poster re-reads it. */
+const POEM_DEBOUNCE_MS = 600;
+
+type Reading = AnalyzeResult & { poem: string };
+
 export function Editor({ session, onExit }: { session: Session; onExit: (goToHow: boolean) => void }) {
   const [poem, setPoem] = useState(session.poem);
   const [settings, setSettings] = useState<EditorSettings>(session.settings);
-  const [result, setResult] = useState<(AnalyzeResult & { poem: string }) | null>(null);
+  const [result, setResult] = useState<Reading | null>(null);
   const [busy, setBusy] = useState(true); // the first read starts as soon as the editor opens
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("mood");
   const [toast, setToast] = useState<string | null>(null);
   const [notice, setNotice] = useState(session.notice ?? null);
+  const [image, setImage] = useState<ImageAsset | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [imageBusy, setImageBusy] = useState(false);
 
   const change = useCallback((patch: Partial<EditorSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
 
@@ -83,18 +106,65 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
       });
   }
 
-  // Typing in the title or byline should not rebuild the poster on every key.
+  // Editing the poem: once typing pauses, the syllables, stresses and rhymes are re-read (without the AI, so
+  // it is instant and free). The mood and the reading stay as Stanza last chose them; "Read it again" asks the AI afresh.
+  const settledPoem = useDebounced(poem, POEM_DEBOUNCE_MS);
+  useEffect(() => {
+    if (!result || settledPoem === result.poem || poemProblem(settledPoem)) return;
+    let cancelled = false;
+    analyzePoem(settledPoem, { skipAi: true })
+      .then((next) => {
+        if (cancelled) return;
+        setResult((prev) =>
+          prev
+            ? {
+                ...prev,
+                poem: settledPoem,
+                prosody: next.prosody,
+                analysis: { ...prev.analysis, emphasis: next.analysis.emphasis, title: next.analysis.title },
+              }
+            : prev,
+        );
+        // Marks and colours stay only where the same word or line is still in the same place.
+        setSettings((s) => ({
+          ...s,
+          emphasis: s.emphasis ? remapEmphasis(result.prosody, next.prosody, s.emphasis) : null,
+          lineColours: remapLineColours(result.prosody, next.prosody, s.lineColours),
+        }));
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Something went wrong reading that poem.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settledPoem, result]);
+
+  // Typing in the title or byline, and dragging a colour, should not rebuild the poster on every tick.
   const title = useDebounced(settings.title);
   const byline = useDebounced(settings.byline);
+  const { background, lineColours, emphasisColour } = settings;
+  const colourLook = useMemo(() => ({ background, lineColours, emphasisColour }), [background, lineColours, emphasisColour]);
+  const settledLook = useDebounced(colourLook, 150);
 
-  const { format, lengthMs, titlePlacement, echoes, mood, paletteVariant, emphasis } = settings;
+  const { format, lengthMs, titlePlacement, echoes, mood, paletteVariant, emphasis, pattern, patternStrength } = settings;
   const response = result;
+
+  const styling = useMemo(
+    () => toSceneStyling({ ...settledLook, pattern, patternStrength }, image),
+    [settledLook, pattern, patternStrength, image],
+  );
+  const effective = useMemo(
+    () => (response ? effectiveAnalysis(response.analysis, { mood, paletteVariant, emphasis }, response.prosody) : null),
+    [response, mood, paletteVariant, emphasis],
+  );
+
   const input = useMemo(
     () =>
-      response
+      response && effective
         ? {
             prosody: response.prosody,
-            analysis: effectiveAnalysis(response.analysis, { mood, paletteVariant, emphasis }, response.prosody),
+            analysis: effective,
             format,
             speed: 1,
             lengthMs,
@@ -102,14 +172,49 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
             titlePlacement,
             byline: formatByline(byline),
             echoes,
+            styling,
           }
         : null,
-    [response, format, lengthMs, title, titlePlacement, byline, echoes, mood, paletteVariant, emphasis],
+    [response, effective, format, lengthMs, title, titlePlacement, byline, echoes, styling],
   );
   const sceneState = useScene(input);
   const length = sceneState.status === "ready" ? sceneState.scene.length : null;
 
-  // Copy link: the poem and every setting, compressed into the URL hash.
+  // The colours the poster really has now: what the line-colour and emphasis controls need to show and check against.
+  const livePreset = getMoodPreset(effective?.mood ?? "Tender");
+  const livePalette = useMemo(
+    () => resolvePalette(livePreset, effective?.paletteVariant ?? 0, toSceneStyling({ background, pattern, patternStrength, lineColours, emphasisColour }, image)),
+    [livePreset, effective?.paletteVariant, background, pattern, patternStrength, lineColours, emphasisColour, image],
+  );
+  const customEmphasis = emphasis !== null || emphasisColour !== null;
+
+  async function chooseImage(file: File) {
+    setImageBusy(true);
+    setImageError(null);
+    try {
+      const asset = await loadImageAsset(file);
+      setImage(asset);
+      setSettings((s) => ({ ...s, background: { kind: "image", darken: s.background.kind === "image" ? s.background.darken : 0.35 } }));
+    } catch (e) {
+      setImageError(e instanceof ImageProblem ? e.message : "That image couldn't be opened. Try a JPG, PNG or WebP.");
+    } finally {
+      setImageBusy(false);
+    }
+  }
+
+  function removeImage() {
+    setImage(null);
+    setImageError(null);
+    setSettings((s) => (s.background.kind === "image" ? { ...s, background: { kind: "mood" } } : s));
+  }
+
+  function resetAllStyling() {
+    setSettings(resetStyling);
+    setImage(null);
+    setImageError(null);
+  }
+
+  // Copy link: the poem and every setting, compressed into the URL hash. (A photo is never part of it.)
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 3000);
@@ -122,12 +227,13 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
     const url = `${window.location.origin}${window.location.pathname}${shareHash(state)}`;
     try {
       await navigator.clipboard.writeText(url);
-      setToast("Link copied. It holds your poem and every setting.");
+      setToast(settings.background.kind === "image" ? "Link copied. Your photo stays in this browser, so the link uses the mood's paper." : "Link copied. It holds your poem and every setting.");
     } catch {
       window.prompt("Copy this link:", url);
     }
   }
 
+  const edited = response !== null && poem !== response.poem;
   const poemPanel = (
     <PoemPanel
       poem={poem}
@@ -137,9 +243,9 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
       suggestion={response?.analysis.title ?? null}
       response={response}
       busy={busy}
-      error={error}
+      error={error ?? (edited ? poemProblem(poem) : null)}
       stats={response ? ({ source: response.source, seconds: response.latencyMs / 1000 } satisfies ReadStats) : null}
-      edited={response !== null && poem !== response.poem}
+      edited={edited}
       onRead={readAgain}
     />
   );
@@ -198,7 +304,7 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
             {shownMood ? ` · ${shownMood}` : ""}
           </p>
           {sceneState.status === "ready" ? (
-            <PreviewPanel key={sceneState.key} scene={sceneState.scene} />
+            <PreviewPanel key={sceneState.key} scene={sceneState.scene} image={image} />
           ) : (
             <div className="flex min-h-[50vh] w-full items-center justify-center text-center text-sm text-muted" role="status">
               {sceneState.status === "error"
@@ -232,9 +338,46 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
                 hasTitle={settings.title.trim() !== ""}
                 byline={settings.byline}
                 onByline={(value) => change({ byline: value })}
+                prosody={response?.prosody ?? null}
+                palette={livePalette}
+                lineColours={lineColours}
+                onLineColour={(line, colour) =>
+                  setSettings((s) => {
+                    const next = { ...s.lineColours };
+                    if (colour === null) delete next[line];
+                    else next[line] = colour;
+                    return { ...s, lineColours: next };
+                  })
+                }
+                marked={new Set(effective?.emphasis ?? [])}
+                onToggleWord={(wordId) => response && change({ emphasis: toggleImportantWord(emphasis, response.analysis.emphasis, wordId) })}
+                emphasisColour={emphasisColour ?? defaultEmphasisColour(livePreset, livePalette)}
+                onEmphasisColour={(colour) => change({ emphasisColour: colour })}
+                customEmphasis={customEmphasis}
+                onLetStanzaChoose={() => change({ emphasis: null, emphasisColour: null })}
+                canReset={hasCustomStyling(settings)}
+                onReset={resetAllStyling}
               />
             )}
-            {tab === "background" && <BackgroundTab />}
+            {tab === "background" && (
+              <BackgroundTab
+                background={background}
+                onBackground={(next) => change({ background: next })}
+                image={image}
+                imageError={imageError}
+                imageBusy={imageBusy}
+                onImageFile={chooseImage}
+                onRemoveImage={removeImage}
+                pattern={pattern}
+                patternStrength={patternStrength}
+                onPattern={(id) => change({ pattern: id })}
+                onPatternStrength={(strength) => change({ patternStrength: strength })}
+                paper={livePalette.background}
+                ink={livePalette.ink}
+                canReset={hasCustomStyling(settings)}
+                onReset={resetAllStyling}
+              />
+            )}
             {tab === "timing" && (
               <TimingTab
                 format={format}

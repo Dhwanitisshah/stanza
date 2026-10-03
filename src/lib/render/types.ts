@@ -4,6 +4,7 @@ import type { Analysis } from "@/lib/ai/schema";
 import type { EntranceStyle, MoodPreset } from "@/lib/moods/types";
 import type { PublicProsody } from "@/lib/prosody";
 import type { LengthSolution } from "@/lib/timeline/speedForDuration";
+import type { SceneStyling } from "./styling";
 
 export type FormatId = "reel" | "post";
 
@@ -160,6 +161,8 @@ export interface Scene {
   speed: number;
   /** false when the rhyme echoes are switched off. */
   echoes: boolean;
+  /** The user's background, pattern and colour choices (defaults when they made none). */
+  styling: SceneStyling;
   /** How the length was reached (speed, extra hold) and the shortest readable duration. */
   length: LengthSolution;
   layout: Layout;

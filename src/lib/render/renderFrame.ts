@@ -31,8 +31,12 @@ export type FrameContext = Pick<
 export interface FrameResources {
   /** From buildFrameIndex(scene). Built on the fly if missing (fine for tests, wasteful per frame). */
   index?: FrameIndex;
+  /** The user's photo, already cover-fitted to the canvas size. Decoded once by the caller: renderFrame stays pure. */
+  image?: CanvasImageSource | null;
   /** Pre-rendered paper grain, same size as the canvas. */
   grain?: CanvasImageSource | null;
+  /** Pre-rendered background pattern (ruled, grid...), same size as the canvas, transparent. */
+  pattern?: CanvasImageSource | null;
 }
 
 export function clampTime(t: number, totalMs: number): number {
@@ -180,7 +184,18 @@ export function renderFrame(ctx: FrameContext, scene: Scene, t: number, resource
   ctx.globalAlpha = 1;
   ctx.fillStyle = index.background;
   ctx.fillRect(0, 0, index.width, index.height);
+  // Back to front: background colour, photo, darkening, paper grain, pattern. Then the text.
+  if (resources.image) {
+    ctx.drawImage(resources.image, 0, 0);
+    if (index.darken > 0) {
+      ctx.globalAlpha = index.darken;
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, index.width, index.height);
+      ctx.globalAlpha = 1;
+    }
+  }
   if (resources.grain) ctx.drawImage(resources.grain, 0, 0);
+  if (resources.pattern) ctx.drawImage(resources.pattern, 0, 0);
 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
@@ -216,7 +231,7 @@ export function renderFrame(ctx: FrameContext, scene: Scene, t: number, resource
       currentFont = font;
     }
     const fontPx = emphasized ? index.fontSize * index.emphasisScale : index.fontSize;
-    const fill = emphasized ? index.emphasisFill : index.ink;
+    const fill = word.fill;
 
     for (let p = 0; p < word.pieces.length; p++) {
       const piece = word.pieces[p];

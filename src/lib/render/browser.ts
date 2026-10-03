@@ -3,6 +3,8 @@ import type { MoodPreset } from "@/lib/moods/types";
 import { buildFrameIndex } from "./frameIndex";
 import { fontString, moodFontSpecs } from "./fonts";
 import type { FrameResources } from "./renderFrame";
+import { coverCanvas, type ImageAsset } from "./image";
+import { drawPattern } from "./patterns";
 import { grainPixels, hashSeed } from "./texture";
 import type { MeasureText, Scene } from "./types";
 
@@ -85,9 +87,28 @@ export function createGrainCanvas(width: number, height: number, intensity: numb
   return canvas;
 }
 
-/** Everything renderFrame wants per scene, built once: the frame index and the grain image. */
-export function prepareResources(scene: Scene): Required<FrameResources> {
+/** The pattern (ruled, grid...) drawn once onto a transparent canvas, in the poster's own ink. */
+export function createPatternCanvas(scene: Scene, width: number, height: number, ink: string): CanvasImageSource | null {
+  const { id, strength } = scene.styling.pattern;
+  if (id === "none" || strength <= 0) return null;
+  const canvas = createCanvas(width, height);
+  const context = canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+  if (!context) return null;
+  drawPattern(context, id, width, height, strength, ink);
+  return canvas;
+}
+
+/**
+ * Everything renderFrame wants per scene, built once: the frame index, the paper grain, the pattern, and the
+ * photo cover-fitted to the canvas. renderFrame itself stays a pure function of (scene, t, these).
+ */
+export function prepareResources(scene: Scene, image: ImageAsset | null = null): Required<FrameResources> {
   const index = buildFrameIndex(scene);
   const seed = hashSeed(`${scene.mood.id}:${scene.format}:${scene.analysis.paletteVariant}`);
-  return { index, grain: createGrainCanvas(index.width, index.height, index.textureIntensity, seed) };
+  return {
+    index,
+    grain: createGrainCanvas(index.width, index.height, index.textureIntensity, seed),
+    pattern: createPatternCanvas(scene, index.width, index.height, index.ink),
+    image: scene.styling.background.kind === "image" && image ? coverCanvas(image, index.width, index.height) : null,
+  };
 }

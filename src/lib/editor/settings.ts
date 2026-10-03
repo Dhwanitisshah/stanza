@@ -2,8 +2,13 @@
 import type { Analysis } from "@/lib/ai/schema";
 import type { MoodId } from "@/lib/moods/ids";
 import type { PublicProsody } from "@/lib/prosody";
-import type { ShareState } from "@/lib/share/encode";
+import type { PatternId } from "@/lib/render/patterns";
+import { DEFAULT_STYLING, MAX_DARKEN, type SceneStyling } from "@/lib/render/styling";
 import type { FormatId, TitlePlacement } from "@/lib/render/types";
+import type { ShareState } from "@/lib/share/encode";
+
+/** What sits behind the poem. A photo's pixels are held separately by the editor; the setting only says "use it" and how dark. */
+export type BackgroundChoice = { kind: "mood" } | { kind: "colour"; colour: string } | { kind: "image"; darken: number };
 
 /** What the user can change. null means "leave it to Stanza's reading". */
 export interface EditorSettings {
@@ -18,7 +23,17 @@ export interface EditorSettings {
   echoes: boolean;
   /** Emphasised word ids; null = the AI's pick. */
   emphasis: string[] | null;
+  background: BackgroundChoice;
+  pattern: PatternId;
+  /** 0..100. */
+  patternStrength: number;
+  /** Colour overrides by global line index. */
+  lineColours: Record<number, string>;
+  /** Colour of the emphasised words; null = the mood's own. */
+  emphasisColour: string | null;
 }
+
+export const DEFAULT_DARKEN = 0.35;
 
 export const DEFAULT_SETTINGS: EditorSettings = {
   title: "",
@@ -30,6 +45,11 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   lengthMs: null,
   echoes: true,
   emphasis: null,
+  background: { kind: "mood" },
+  pattern: "none",
+  patternStrength: 50,
+  lineColours: {},
+  emphasisColour: null,
 };
 
 /** Length presets in ms; null is Auto. */
@@ -49,6 +69,82 @@ export function effectiveAnalysis(analysis: Analysis, settings: Pick<EditorSetti
   };
 }
 
+/** The look of the poster for the scene builder. A photo background without a photo falls back to the mood's paper. */
+export function toSceneStyling(
+  settings: Pick<EditorSettings, "background" | "pattern" | "patternStrength" | "lineColours" | "emphasisColour">,
+  image: { luminance: number } | null,
+): SceneStyling {
+  const { background } = settings;
+  return {
+    ...DEFAULT_STYLING,
+    background:
+      background.kind === "colour"
+        ? { kind: "colour", colour: background.colour }
+        : background.kind === "image" && image
+          ? { kind: "image", darken: Math.min(MAX_DARKEN, Math.max(0, background.darken)), luminance: image.luminance }
+          : { kind: "mood" },
+    pattern: { id: settings.pattern, strength: settings.patternStrength },
+    lineColours: settings.lineColours,
+    emphasisColour: settings.emphasisColour,
+  };
+}
+
+/**
+ * Clears everything about the LOOK: mood, palette, background, photo, pattern, line colours, important words and
+ * their colour. Title, byline, format, length and echoes are left alone: they are not styling.
+ */
+export function resetStyling(settings: EditorSettings): EditorSettings {
+  const { background, pattern, patternStrength, lineColours, emphasisColour, emphasis, mood, paletteVariant } = DEFAULT_SETTINGS;
+  return { ...settings, background, pattern, patternStrength, lineColours: { ...lineColours }, emphasisColour, emphasis, mood, paletteVariant };
+}
+
+/** True when anything about the look differs from Stanza's own reading (so "Reset styling" has something to do). */
+export function hasCustomStyling(settings: EditorSettings): boolean {
+  return (
+    settings.background.kind !== "mood" ||
+    settings.pattern !== "none" ||
+    Object.keys(settings.lineColours).length > 0 ||
+    settings.emphasisColour !== null ||
+    settings.emphasis !== null ||
+    settings.mood !== null ||
+    settings.paletteVariant !== null
+  );
+}
+
+const wordsById = (prosody: PublicProsody) => new Map(prosody.stanzas.flatMap((s) => s.lines.flatMap((l) => l.words.map((w) => [w.id, w.core.toLowerCase()] as const))));
+const lineTexts = (prosody: PublicProsody) => prosody.stanzas.flatMap((s) => s.lines.map((l) => l.words.map((w) => w.text).join(" ")));
+
+/**
+ * After the poem is edited and read again, keep a marked word only if the same word is still at the same place.
+ * (Word ids count words from the top, so inserting a word shifts everything after it.)
+ */
+export function remapEmphasis(previous: PublicProsody, next: PublicProsody, ids: string[]): string[] {
+  const before = wordsById(previous);
+  const after = wordsById(next);
+  return ids.filter((id) => before.has(id) && before.get(id) === after.get(id));
+}
+
+/** Likewise for line colours: a colour stays only if its line still says the same thing. */
+export function remapLineColours(previous: PublicProsody, next: PublicProsody, colours: Record<number, string>): Record<number, string> {
+  const before = lineTexts(previous);
+  const after = lineTexts(next);
+  const kept: Record<number, string> = {};
+  for (const [key, colour] of Object.entries(colours)) {
+    const line = Number(key);
+    if (before[line] !== undefined && before[line] === after[line]) kept[line] = colour;
+  }
+  return kept;
+}
+
+/**
+ * Tapping a word marks it or unmarks it. The first tap starts from Stanza's pick, so the user edits it instead of
+ * replacing it with a blank. Returns the new list of marked ids (never null: the user has now chosen).
+ */
+export function toggleImportantWord(current: string[] | null, aiPick: string[], wordId: string): string[] {
+  const base = current ?? aiPick;
+  return base.includes(wordId) ? base.filter((id) => id !== wordId) : [...base, wordId];
+}
+
 /** The share link state for what is on screen right now. */
 export function toShareState(poem: string, settings: EditorSettings, analysis: Analysis, prosody: PublicProsody): ShareState {
   const effective = effectiveAnalysis(analysis, settings, prosody);
@@ -63,6 +159,11 @@ export function toShareState(poem: string, settings: EditorSettings, analysis: A
     lengthMs: settings.lengthMs,
     echoes: settings.echoes,
     emphasis: effective.emphasis,
+    background: settings.background,
+    pattern: settings.pattern,
+    patternStrength: settings.patternStrength,
+    lineColours: settings.lineColours,
+    emphasisColour: settings.emphasisColour,
   };
 }
 
@@ -78,6 +179,11 @@ export function settingsFromShare(state: ShareState): EditorSettings {
     lengthMs: state.lengthMs,
     echoes: state.echoes,
     emphasis: state.emphasis,
+    background: state.background,
+    pattern: state.pattern,
+    patternStrength: state.patternStrength,
+    lineColours: state.lineColours,
+    emphasisColour: state.emphasisColour,
   };
 }
 
