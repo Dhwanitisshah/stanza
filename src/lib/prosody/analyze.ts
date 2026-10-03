@@ -89,3 +89,29 @@ export function analyzePoem(poem: string): ProsodyResult {
     syllableCount: allLines.reduce((n, l) => n + l.syllables, 0),
   };
 }
+
+// What leaves the server: the same result without per-word phoneme variants (only rhyme matching needs them).
+export type PublicWord = Omit<AnalyzedWord, "variants">;
+export interface PublicLine extends Omit<AnalyzedLine, "words"> {
+  words: PublicWord[];
+}
+export interface PublicStanza extends Omit<AnalyzedStanza, "lines"> {
+  lines: PublicLine[];
+}
+export interface PublicProsody extends Omit<ProsodyResult, "stanzas"> {
+  stanzas: PublicStanza[];
+}
+
+export function toPublicProsody(result: ProsodyResult): PublicProsody {
+  return {
+    ...result,
+    stanzas: result.stanzas.map((stanza) => ({
+      ...stanza,
+      lines: stanza.lines.map((line) => ({
+        ...line,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping `variants` is the point
+        words: line.words.map(({ variants, ...word }) => word),
+      })),
+    })),
+  };
+}

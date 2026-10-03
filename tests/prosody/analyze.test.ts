@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzePoem } from "@/lib/prosody";
-import { AABB, ABAB, EDGE_CASES, FREE_VERSE } from "../fixtures/poems";
+import { AABB, ABAB, EDGE_CASES, FREE_VERSE, LAMP_ABAB, LETTERS_AABB, TRAFFIC_FREE_VERSE } from "../fixtures/poems";
 
 describe("analyzePoem: sample poems", () => {
   it("detects ABABCC in Wordsworth", () => {
@@ -85,5 +85,38 @@ describe("analyzePoem: edge cases never throw", () => {
 
   it("tolerates non-string input at runtime", () => {
     expect(() => analyzePoem(undefined as unknown as string)).not.toThrow();
+  });
+});
+
+describe("analyzePoem: TESTING.md poems", () => {
+  it("detects ABAB, AABB and no scheme in the originals", () => {
+    expect(analyzePoem(LAMP_ABAB).scheme).toBe("ABAB");
+    expect(analyzePoem(LETTERS_AABB).scheme).toBe("AABB");
+    expect(analyzePoem(TRAFFIC_FREE_VERSE).scheme).toBe("XXXX");
+  });
+
+  it("ignores punctuation when matching rhymes (door, / floor,)", () => {
+    expect(analyzePoem(LAMP_ABAB).rhymeGroups[0].lines).toEqual([0, 2]);
+  });
+
+  it("splits the ABAB poem into 2 stanzas at a blank line", () => {
+    const lines = LAMP_ABAB.trimEnd().split("\n");
+    const result = analyzePoem([...lines.slice(0, 2), "", ...lines.slice(2)].join("\n"));
+    expect(result.stanzas).toHaveLength(2);
+    expect(result.scheme).toBe("ABAB");
+  });
+
+  it("counts syllables sensibly", () => {
+    const count = (w: string) => analyzePoem(w).syllableCount;
+    expect(count("beautiful")).toBe(3);
+    expect(count("moon")).toBe(1);
+    expect(count("quiet")).toBe(2);
+    expect([1, 2]).toContain(count("fire"));
+  });
+
+  it("gives unknown words like wallah a heuristic count instead of crashing", () => {
+    const words = analyzePoem(EDGE_CASES.unknownWords).stanzas[0].lines[0].words;
+    expect(words.find((w) => w.core === "wallah")).toMatchObject({ source: "heuristic" });
+    expect(words.every((w) => w.syllables >= 1)).toBe(true);
   });
 });
