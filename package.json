@@ -12,6 +12,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "timeline": "node scripts/timeline.mjs",
     "layout-stats": "node scripts/layout-stats.mjs",
+    "posters": "node scripts/posters.mjs",
+    "perf": "node scripts/perf.mjs",
     "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1"
   },
   "dependencies": {

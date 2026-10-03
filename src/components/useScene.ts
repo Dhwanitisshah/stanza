@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Analysis } from "@/lib/ai/schema";
+import type { MoodId } from "@/lib/moods/ids";
 import { getMoodPreset } from "@/lib/moods/presets";
 import type { PublicProsody } from "@/lib/prosody";
 import { createCanvasMeasure, loadMoodFonts, resolveMoodFonts } from "@/lib/render/browser";
@@ -13,6 +14,9 @@ export interface SceneInput {
   analysis: Analysis;
   format: FormatId;
   speed: number;
+  /** Overrides the analysed mood (the user picked one). */
+  mood?: MoodId;
+  byline?: string;
 }
 
 export type SceneState =
@@ -56,7 +60,7 @@ export function useScene(input: SceneInput | null): SceneState {
 
     (async () => {
       try {
-        const preset = resolveMoodFonts(getMoodPreset(input.analysis.mood));
+        const preset = resolveMoodFonts(getMoodPreset(input.mood ?? input.analysis.mood));
         await loadMoodFonts(preset, poemText(input.prosody));
         if (cancelled) return;
         const scene = buildScene({ ...input, preset, measureText: createCanvasMeasure() });

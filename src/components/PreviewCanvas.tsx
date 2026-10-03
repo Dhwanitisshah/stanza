@@ -20,6 +20,9 @@ export function PreviewCanvas({ scene }: { scene: Scene }) {
   const { player, state, totalMs } = usePlayer(scene, canvasRef);
   const { width, height } = scene.layout;
   const stats = layoutStats(scene.layout);
+  // For the dev tools: which mood this is, and a moment worth looking at (an echo landing, mid-entrance).
+  const echo = scene.timeline.events.find((e) => e.type === "echo");
+  const reviewMs = Math.round(echo ? echo.start + echo.duration * 0.45 : totalMs * 0.4);
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -33,6 +36,8 @@ export function PreviewCanvas({ scene }: { scene: Scene }) {
         data-lines={stats.lines}
         data-wrapped-lines={stats.wrappedLines}
         data-total-ms={totalMs}
+        data-mood={scene.mood.id}
+        data-review-ms={reviewMs}
         className="block h-auto max-h-[70vh] w-auto max-w-full border border-black/20 shadow-sm"
       />
 

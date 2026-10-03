@@ -88,7 +88,11 @@ export async function launchBrowser(debugPort) {
 }
 
 /** Opens a page and returns small helpers around the DevTools protocol. */
-export async function openPage(debugPort, url, { width = 1100, height = 1500 } = {}) {
+export async function openPage(
+  debugPort,
+  url,
+  { width = 1100, height = 1500, ready = 'document.readyState === "complete" && !!document.querySelector("textarea")' } = {},
+) {
   const target = await (await fetch(`http://127.0.0.1:${debugPort}/json/new?${encodeURIComponent(url)}`, { method: "PUT" })).json();
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
@@ -135,9 +139,15 @@ export async function openPage(debugPort, url, { width = 1100, height = 1500 } =
   await send("Runtime.enable");
   await send("Page.enable");
   await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
-  await waitFor(`document.readyState === "complete" && !!document.querySelector("textarea")`, "the page to load");
+  await waitFor(ready, "the page to load");
 
-  return { send, evaluate, waitFor, consoleLines, close: () => ws.close() };
+  /** Full-page PNG screenshot as a Buffer. */
+  const screenshot = async () => {
+    const response = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
+    return Buffer.from(response.result.data, "base64");
+  };
+
+  return { send, evaluate, waitFor, consoleLines, screenshot, close: () => ws.close() };
 }
 
 /** Helpers that operate the TEMP dev harness the way a person would. */

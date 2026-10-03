@@ -1,6 +1,7 @@
 // Browser-only glue: everything here needs `document` or a canvas. The pure engine never imports this file.
 import type { MoodPreset } from "@/lib/moods/types";
 import { buildFrameIndex } from "./frameIndex";
+import { fontString, moodFontSpecs } from "./fonts";
 import type { FrameResources } from "./renderFrame";
 import { grainPixels, hashSeed } from "./texture";
 import type { MeasureText, Scene } from "./types";
@@ -38,18 +39,13 @@ const firstFamily = (cssFamilyList: string) => cssFamilyList.split(",")[0].trim(
  * `text` is passed so the right unicode-range subsets load too.
  */
 export async function loadMoodFonts(mood: MoodPreset, text: string): Promise<void> {
-  const { typography, emphasis } = mood;
-  const needed = [
-    { family: typography.display, weight: typography.weight },
-    { family: typography.display, weight: emphasis.weight },
-    { family: typography.body, weight: 400 },
-  ];
   const sample = `Aa ${text}`;
 
   const loadAll = Promise.all(
-    needed.map(async ({ family, weight }) => {
-      const faces = await document.fonts.load(`${weight} 16px ${firstFamily(family)}`, sample);
-      if (faces.length === 0) throw new Error(`The font ${firstFamily(family)} (weight ${weight}) is not available.`);
+    moodFontSpecs(mood).map(async (spec) => {
+      const family = firstFamily(spec.family);
+      const faces = await document.fonts.load(fontString({ ...spec, family }), sample);
+      if (faces.length === 0) throw new Error(`The font ${family} (${spec.italic ? "italic " : ""}weight ${spec.weight}) is not available.`);
     }),
   );
   const timeout = new Promise<never>((_, reject) => {

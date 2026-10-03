@@ -2,7 +2,7 @@
 import type { Analysis } from "@/lib/ai/schema";
 import type { MoodPreset } from "@/lib/moods/types";
 import type { PublicProsody, PublicWord } from "@/lib/prosody";
-import type { AppearEvent, EchoEvent, PageEvent, StanzaDimEvent, Timeline, TimelineEvent } from "@/lib/render/types";
+import type { AppearEvent, EchoEvent, FooterEvent, PageEvent, StanzaDimEvent, Timeline, TimelineEvent } from "@/lib/render/types";
 import { TIMING, type PauseKind } from "./config";
 
 /** Strongest punctuation wins: "!)" is long, ',"' is a comma. */
@@ -123,9 +123,15 @@ export function buildTimeline(
     events.push(echo);
   }
 
+  if (lines.length > 0) {
+    const footer: FooterEvent = { type: "footer", start: lastWordEnd + TIMING.footerDelayMs, duration: TIMING.footerFadeMs };
+    events.push(footer);
+  }
+
   events.sort((a, b) => a.start - b.start); // stable: ties keep creation order (appear before echo)
 
-  const lastEventEnd = events.reduce((max, e) => Math.max(max, e.start + e.duration), 0);
+  // The footer fades in during the final hold, so it does not count towards when the poem itself is done.
+  const lastEventEnd = events.reduce((max, e) => (e.type === "footer" ? max : Math.max(max, e.start + e.duration)), 0);
   const totalMs = Math.max(lastWordEnd, lastEventEnd) + TIMING.finalHoldMs;
   return { events, totalMs };
 }

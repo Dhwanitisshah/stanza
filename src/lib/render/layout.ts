@@ -2,7 +2,8 @@
 // `measureText` is injected so tests (and the CLI) run without a browser; the app passes a canvas-backed one.
 import type { MoodPreset } from "@/lib/moods/types";
 import type { PublicProsody } from "@/lib/prosody";
-import type { FormatId, Layout, LayoutPage, MeasureText, Piece, PlacedWord, Rect } from "./types";
+import { FOOTER_FONT_SIZE, fontString } from "./fonts";
+import type { FooterLine, FormatId, Layout, LayoutPage, MeasureText, Piece, PlacedWord, Rect } from "./types";
 
 export const FORMATS: Record<FormatId, { width: number; height: number }> = {
   reel: { width: 1080, height: 1920 }, // 9:16
@@ -25,6 +26,13 @@ export const LAYOUT_CONFIG = {
   absoluteMinFontSize: 12,
   /** Wrapped rows are indented by this many em (left-aligned moods only). */
   hangingIndentEm: 1,
+  /** Bottom strip of the safe area kept free on every page for the title and byline. */
+  footerReserve: 120,
+  /** Gap between the last footer baseline and the bottom of the safe area. */
+  footerBaselineInset: 12,
+  footerLineHeightEm: 1.4,
+  /** The footer shrinks to fit a long title, but never below this. */
+  footerMinFontSize: 18,
   /** Where the baseline sits in an em box (most fonts: ascent is about 80% of the font size). */
   ascentRatio: 0.8,
   /** Extra space between stanzas, in em. */
@@ -163,8 +171,9 @@ function wrapLine(
 }
 
 function metricsFor(size: number, mood: MoodPreset, safe: Rect, measure: MeasureText): Metrics {
-  const font = `${mood.typography.weight} ${size}px ${mood.typography.display}`;
-  const emphasisFont = `${mood.emphasis.weight} ${size * mood.emphasis.scale}px ${mood.typography.display}`;
+  const family = mood.typography.display;
+  const font = fontString({ family, weight: mood.typography.weight, italic: false, size });
+  const emphasisFont = fontString({ family, weight: mood.emphasis.weight, italic: mood.emphasis.italic, size: size * mood.emphasis.scale });
   const indent = mood.typography.align === "left" ? LAYOUT_CONFIG.hangingIndentEm * size : 0;
   return {
     size,
@@ -372,8 +381,49 @@ function placeWords(blocks: Block[], m: Metrics, safe: Rect, align: "left" | "ce
 
 const NO_EMPHASIS: ReadonlySet<string> = new Set();
 
+export interface FooterInput {
+  title: string;
+  /** For example "— Dhwanit". */
+  byline?: string;
+}
+
+const MAX_FOOTER_CHARS = 120;
+
+/** Shrinks the footer text to fit one row; as a last resort cuts it and adds an ellipsis. */
+function fitFooterText(text: string, spec: { family: string; weight: number; italic: boolean }, maxWidth: number, measure: MeasureText) {
+  const { footerMinFontSize } = LAYOUT_CONFIG;
+  for (let size = FOOTER_FONT_SIZE; size >= footerMinFontSize; size--) {
+    const font = fontString({ ...spec, size });
+    if (measure(text, font) <= maxWidth) return { text, font };
+  }
+  const font = fontString({ ...spec, size: footerMinFontSize });
+  const [first] = splitToFit(text, maxWidth - measure("\u2026", font), maxWidth, font, measure);
+  return { text: (first ?? "") + "\u2026", font };
+}
+
+/** Title above byline, bottom-aligned in the safe area, aligned like the poem. */
+function footerLines(footer: FooterInput | undefined, mood: MoodPreset, safe: Rect, measure: MeasureText): FooterLine[] {
+  if (!footer) return [];
+  const { typography, footer: style } = mood;
+  const spec = { family: style.font === "display" ? typography.display : typography.body, weight: style.weight, italic: style.italic };
+  const texts = [footer.title, footer.byline ?? ""]
+    .map((t) => t.trim().slice(0, MAX_FOOTER_CHARS))
+    .filter(Boolean)
+    .map((t) => (style.uppercase ? t.toUpperCase() : t));
+
+  const lineHeight = FOOTER_FONT_SIZE * LAYOUT_CONFIG.footerLineHeightEm;
+  const lastBaseline = safe.y + safe.height - LAYOUT_CONFIG.footerBaselineInset;
+  return texts.map((text, i) => {
+    const fitted = fitFooterText(text, spec, safe.width, measure);
+    const width = measure(fitted.text, fitted.font);
+    const x = typography.align === "center" ? safe.x + (safe.width - width) / 2 : safe.x;
+    return { text: fitted.text, x, y: lastBaseline - (texts.length - 1 - i) * lineHeight, font: fitted.font };
+  });
+}
+
 /**
  * @param emphasized ids of emphasised words. They are measured in the emphasis font, so they fit as drawn.
+ * @param footer title and optional byline, drawn in a strip at the bottom of the safe area
  */
 export function layout(
   prosody: PublicProsody,
@@ -381,14 +431,17 @@ export function layout(
   mood: MoodPreset,
   measureText: MeasureText,
   emphasized: ReadonlySet<string> = NO_EMPHASIS,
+  footer?: FooterInput,
 ): Layout {
   const safeArea = safeAreaFor(format);
   const measure = cachedMeasure(measureText);
-  const { metrics, pages } = plan(prosody, emphasized, mood, safeArea, measure);
+  // The poem lives above the footer strip.
+  const contentArea: Rect = { ...safeArea, height: safeArea.height - LAYOUT_CONFIG.footerReserve };
+  const { metrics, pages } = plan(prosody, emphasized, mood, contentArea, measure);
 
   const layoutPages: LayoutPage[] = pages.map((blocks, index) => ({
     index,
-    words: placeWords(blocks, metrics, safeArea, mood.typography.align, index),
+    words: placeWords(blocks, metrics, contentArea, mood.typography.align, index),
   }));
 
   const pageOfLine: number[] = [];
@@ -405,5 +458,6 @@ export function layout(
     baseline: (metrics.rowHeight - metrics.size) / 2 + metrics.size * LAYOUT_CONFIG.ascentRatio,
     pages: layoutPages,
     pageOfLine,
+    footer: footerLines(footer, mood, safeArea, measure),
   };
 }

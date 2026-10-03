@@ -8,10 +8,13 @@ import type { FormatId, Layout } from "@/lib/render/types";
 import { ABAB, AABB, EDGE_CASES, FREE_VERSE, LAMP_ABAB, LETTERS_AABB, TRAFFIC_FREE_VERSE } from "../fixtures/poems";
 import { monospace, narrowSerif, prepare, wordIds } from "../helpers";
 
+// Tender is centred now; most layout rules (hanging indent, row starts) are about left-aligned text.
+const LEFT: MoodPreset = { ...TENDER, typography: { ...TENDER.typography, align: "left" } };
+
 const FORMAT_IDS: FormatId[] = ["reel", "post"];
 const EPS = 1e-6;
 
-const run = (poem: string, format: FormatId = "reel", mood: MoodPreset = TENDER) =>
+const run = (poem: string, format: FormatId = "reel", mood: MoodPreset = LEFT) =>
   layout(prepare(poem).prosody, format, mood, monospace);
 
 /** The same text as `count` lines, grouped into stanzas of `perStanza` lines (0 = no blank lines at all). */
@@ -55,7 +58,7 @@ describe("layout: basics", () => {
   it("places every word exactly once, on one page, and maps every line to a page", () => {
     for (const poem of [LAMP_ABAB, ABAB, AABB, FREE_VERSE, LETTERS_AABB, TRAFFIC_FREE_VERSE]) {
       const { prosody } = prepare(poem);
-      const result = layout(prosody, "reel", TENDER, monospace);
+      const result = layout(prosody, "reel", LEFT, monospace);
       const placed = result.pages.flatMap((p) => p.words.map((w) => w.wordId));
       expect(placed).toEqual(wordIds(prosody));
       expect(result.pageOfLine).toHaveLength(prosody.stanzas.flatMap((s) => s.lines).length);
@@ -234,7 +237,8 @@ describe("buildScene", () => {
   it("lets the user override the analysed mood", () => {
     const { prosody, analysis } = prepare(LAMP_ABAB);
     const scene = buildScene({ prosody, analysis, mood: "Restless", format: "post", speed: 1, measureText: monospace });
-    expect(scene.mood.id).toBe("Tender"); // Phase 3a: only Tender exists, others fall back to it
+    expect(scene.mood.id).toBe("Restless");
+    expect(scene.analysis.mood).not.toBe("Restless"); // the override, not the analysis, chose the mood
     expect(scene.format).toBe("post");
   });
 });
@@ -246,7 +250,7 @@ describe("layout: emphasised words", () => {
     return words[words.length - 1].id;
   };
   const withEmphasis = (poem: string, format: FormatId = "post") =>
-    layout(prepare(poem).prosody, format, TENDER, monospace, new Set([lastId(poem)]));
+    layout(prepare(poem).prosody, format, LEFT, monospace, new Set([lastId(poem)]));
 
   it("measures an emphasised word in the emphasis font, wider than the plain one", () => {
     const result = withEmphasis("moon");
@@ -267,7 +271,7 @@ describe("layout: emphasised words", () => {
     let wouldOverflow = 0;
     for (let k = 1; k <= 60; k++) {
       const poem = phrase(k);
-      const plain = layout(prepare(poem).prosody, "post", TENDER, monospace);
+      const plain = layout(prepare(poem).prosody, "post", LEFT, monospace);
       const last = plain.pages[0].words[plain.pages[0].words.length - 1].box;
       const drawnWidth = last.width * TENDER.emphasis.scale;
       if (last.x + drawnWidth > plain.safeArea.x + plain.safeArea.width + EPS) wouldOverflow++;
@@ -276,12 +280,12 @@ describe("layout: emphasised words", () => {
   });
 
   it("wraps an emphasised word to the next row when its wider font no longer fits", () => {
-    // At the minimum size (44px, 26.4px per character) a row holds 33 characters: 10 + 1 + 11 + 1 + 10.
-    // Plain, the third word ends at 871px and fits in 888px. Emphasised it is 8% wider and does not.
-    const poem = "aaaaaaaaaa bbbbbbbbbbb cccccccccc dddd eeee ffff gggg hhhh iiii";
+    // At the minimum size (44px, 26.4px per character) a row holds 33 characters: 8 + 1 + 9 + 1 + 14.
+    // Plain, the third word ends at 871px and fits in 888px. Emphasised it is 5% wider (+18px) and does not.
+    const poem = "aaaaaaaa bbbbbbbbb cccccccccccccc dddd eeee ffff gggg hhhh iiii";
     const words = prepare(poem).prosody.stanzas[0].lines[0].words;
-    const plain = layout(prepare(poem).prosody, "reel", TENDER, monospace);
-    const emphasised = layout(prepare(poem).prosody, "reel", TENDER, monospace, new Set([words[2].id]));
+    const plain = layout(prepare(poem).prosody, "reel", LEFT, monospace);
+    const emphasised = layout(prepare(poem).prosody, "reel", LEFT, monospace, new Set([words[2].id]));
 
     expect(plain.fontSize).toBe(LAYOUT_CONFIG.minFontSize);
     expect(emphasised.fontSize).toBe(LAYOUT_CONFIG.minFontSize);
@@ -300,7 +304,7 @@ describe("layout: emphasised words", () => {
 });
 
 describe("layout: verse-aware sizing", () => {
-  const serif = (poem: string, format: FormatId = "reel") => layout(prepare(poem).prosody, format, TENDER, narrowSerif);
+  const serif = (poem: string, format: FormatId = "reel") => layout(prepare(poem).prosody, format, LEFT, narrowSerif);
   const stats = (poem: string, format: FormatId = "reel") => layoutStats(serif(poem, format));
 
   it("keeps every line of the ABAB fixture on one row, in Reel and Post", () => {

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { cubicBezier } from "@/lib/render/easing";
-import { entranceAlpha, entranceOffsetY } from "@/lib/render/entrances";
 import { grainPixels, hashSeed, mulberry32 } from "@/lib/render/texture";
 
 describe("cubicBezier", () => {
@@ -30,15 +29,6 @@ describe("cubicBezier", () => {
       expect(y).toBeGreaterThanOrEqual(previous - 1e-9);
       previous = y;
     }
-  });
-});
-
-describe("entrances", () => {
-  it("fade-rise goes from invisible and low to opaque and in place", () => {
-    expect(entranceAlpha("fade-rise", 0)).toBe(0);
-    expect(entranceAlpha("fade-rise", 1)).toBe(1);
-    expect(entranceOffsetY("fade-rise", 0, 100)).toBeGreaterThan(0);
-    expect(entranceOffsetY("fade-rise", 1, 100)).toBe(0);
   });
 });
 

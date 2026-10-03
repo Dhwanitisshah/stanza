@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareWords, detectScheme, rhymeTail, type RhymeWord } from "@/lib/prosody/rhyme";
+import { compareWords, detectScheme, rhymeTail, spellingRhymeKey, type RhymeWord } from "@/lib/prosody/rhyme";
 import { pronounce } from "@/lib/prosody/syllables";
 
 const word = (core: string): RhymeWord => ({ core, variants: pronounce(core).variants });
@@ -44,9 +44,69 @@ describe("compareWords", () => {
     expect(compareWords(word("read"), word("need"))).toBe("perfect");
   });
 
-  it("only lets heuristic words repeat", () => {
-    expect(compareWords(word("blorptastic"), word("fantastic"))).toBeNull();
+  it("lets a heuristic word repeat itself", () => {
     expect(compareWords(word("blorptastic"), word("blorptastic"))).toBe("repeat");
+  });
+
+  it("rhymes unknown words by spelling, as a near rhyme at most", () => {
+    const invented = compareWords(word("blorptastic"), word("zimbastic"));
+    expect(invented).toBe("near");
+    expect(pronounce("blorptastic").source).toBe("heuristic");
+    expect(pronounce("zimbastic").source).toBe("heuristic");
+  });
+
+  it("rhymes a Hindi-ish pair by spelling (pyaar / yaar)", () => {
+    expect(pronounce("pyaar").source).toBe("heuristic");
+    expect(pronounce("yaar").source).toBe("heuristic");
+    expect(compareWords(word("pyaar"), word("yaar"))).toBe("near");
+  });
+
+  it("compares an unknown word with a dictionary word by spelling too", () => {
+    expect(compareWords(word("bloon"), word("moon"))).toBe("near");
+  });
+
+  it("never calls a spelling rhyme perfect, and rejects different endings", () => {
+    for (const [a, b] of [["pyaar", "yaar"], ["bloon", "moon"], ["blorptastic", "zimbastic"]]) {
+      expect(compareWords(word(a), word(b))).not.toBe("perfect");
+    }
+    expect(compareWords(word("pyaar"), word("zimbastic"))).toBeNull();
+    expect(compareWords(word("bloon"), word("floor"))).toBeNull();
+  });
+
+  it("still lets a dictionary pair win on sound, not spelling", () => {
+    // "tune" and "moon" share a sound but not a spelling: the dictionary finds it.
+    expect(compareWords(word("tune"), word("moon"))).toBe("perfect");
+    // "though" and "through" share a spelling ending but not a sound.
+    expect(compareWords(word("though"), word("through"))).toBeNull();
+  });
+});
+
+describe("spellingRhymeKey", () => {
+  it("takes the last vowel group to the end", () => {
+    expect(spellingRhymeKey("pyaar")).toBe("aar");
+    expect(spellingRhymeKey("yaar")).toBe("aar");
+    expect(spellingRhymeKey("fantastic")).toBe("ic");
+    expect(spellingRhymeKey("moon")).toBe("oon");
+  });
+
+  it("looks past a silent e", () => {
+    expect(spellingRhymeKey("tune")).toBe("une");
+    expect(spellingRhymeKey("kame")).toBe("ame");
+    expect(spellingRhymeKey("tree")).toBe("ee");
+  });
+
+  it("treats y as a vowel only when there is no other vowel", () => {
+    expect(spellingRhymeKey("myth")).toBe("yth"); // no other vowel, so y counts
+    expect(spellingRhymeKey("sky")).toBeNull(); // the key would be a single letter
+    expect(spellingRhymeKey("happy")).toBe("appy"); // other vowels exist, so the final y is just a consonant
+  });
+
+  it("returns null when there is nothing usable", () => {
+    expect(spellingRhymeKey("")).toBeNull();
+    expect(spellingRhymeKey("a")).toBeNull();
+    expect(spellingRhymeKey("1984")).toBeNull();
+    expect(spellingRhymeKey("\u{1F339}\u{1F339}")).toBeNull();
+    expect(spellingRhymeKey("mmm")).toBeNull();
   });
 });
 

@@ -17,12 +17,14 @@ export interface SceneInput {
   preset?: MoodPreset;
   format: FormatId;
   speed: number;
+  /** Optional byline for the footer, e.g. "— Dhwanit". */
+  byline?: string;
   measureText: MeasureText;
 }
 
-export function buildScene({ prosody, analysis, mood, preset: given, format, speed, measureText }: SceneInput): Scene {
+export function buildScene({ prosody, analysis, mood, preset: given, format, speed, byline, measureText }: SceneInput): Scene {
   const preset = given ?? getMoodPreset(mood ?? analysis.mood);
-  const poemLayout = layout(prosody, format, preset, measureText, new Set(analysis.emphasis));
+  const poemLayout = layout(prosody, format, preset, measureText, new Set(analysis.emphasis), { title: analysis.title, byline });
   const timeline = buildTimeline(prosody, analysis, preset, speed, poemLayout.pageOfLine);
-  return { prosody, analysis, mood: preset, format, speed, layout: poemLayout, timeline };
+  return { prosody, analysis, byline, mood: preset, format, speed, layout: poemLayout, timeline };
 }

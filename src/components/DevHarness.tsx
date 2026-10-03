@@ -3,6 +3,7 @@
 // TEMP: a bare-bones harness to look at the renderer. Phase 5 replaces this with the real editor.
 import { useMemo, useState } from "react";
 import type { Analysis, AnalysisSource } from "@/lib/ai/schema";
+import { MOOD_IDS, type MoodId } from "@/lib/moods/ids";
 import type { PublicProsody } from "@/lib/prosody";
 import type { FormatId } from "@/lib/render/types";
 import { PreviewCanvas } from "./PreviewCanvas";
@@ -40,13 +41,25 @@ async function analyze(poem: string): Promise<AnalyzeResponse> {
 export function DevHarness() {
   const [poem, setPoem] = useState(SAMPLE);
   const [format, setFormat] = useState<FormatId>("reel");
+  const [mood, setMood] = useState<MoodId | "auto">("auto");
+  const [byline, setByline] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
 
   const input = useMemo(
-    () => (result ? { prosody: result.prosody, analysis: result.analysis, format, speed: 1 } : null),
-    [result, format],
+    () =>
+      result
+        ? {
+            prosody: result.prosody,
+            analysis: result.analysis,
+            format,
+            speed: 1,
+            mood: mood === "auto" ? undefined : mood,
+            byline: byline.trim() || undefined,
+          }
+        : null,
+    [result, format, mood, byline],
   );
   const sceneState = useScene(input);
 
@@ -81,6 +94,32 @@ export function DevHarness() {
         <button type="button" onClick={onAnalyze} disabled={busy} className="rounded bg-black px-4 py-1.5 text-white disabled:opacity-50">
           {busy ? "Analyzing..." : "Analyze"}
         </button>
+        <label className="flex items-center gap-1 text-sm">
+          Mood
+          <select
+            aria-label="Mood"
+            value={mood}
+            onChange={(event) => setMood(event.target.value as MoodId | "auto")}
+            className="rounded border border-black/30 px-1 py-0.5"
+          >
+            <option value="auto">Auto (from analysis)</option>
+            {MOOD_IDS.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-sm">
+          Byline
+          <input
+            aria-label="Byline"
+            value={byline}
+            onChange={(event) => setByline(event.target.value)}
+            placeholder="— your name"
+            className="w-36 rounded border border-black/30 px-1 py-0.5"
+          />
+        </label>
         <fieldset className="flex items-center gap-3 text-sm">
           <legend className="sr-only">Format</legend>
           {(["reel", "post"] as const).map((id) => (

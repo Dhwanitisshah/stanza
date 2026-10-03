@@ -38,6 +38,14 @@ export interface PlacedWord {
   box: Rect;
 }
 
+/** One line of the footer (title or byline), already positioned. */
+export interface FooterLine {
+  text: string;
+  x: number; // left edge
+  y: number; // baseline
+  font: string;
+}
+
 export interface LayoutPage {
   index: number;
   words: PlacedWord[];
@@ -59,6 +67,8 @@ export interface Layout {
   pages: LayoutPage[];
   /** Page index of each poem line, by global line index. */
   pageOfLine: number[];
+  /** Title and byline in the bottom strip of the safe area (reserved on every page). Empty if neither is set. */
+  footer: FooterLine[];
 }
 
 // ---------- timeline ----------
@@ -102,7 +112,14 @@ export interface PageEvent {
   duration: number;
 }
 
-export type TimelineEvent = AppearEvent | EchoEvent | StanzaDimEvent | PageEvent;
+/** The title and byline fade in during the final hold. */
+export interface FooterEvent {
+  type: "footer";
+  start: number;
+  duration: number;
+}
+
+export type TimelineEvent = AppearEvent | EchoEvent | StanzaDimEvent | PageEvent | FooterEvent;
 
 export interface Timeline {
   /** Sorted by start time. All values are integer milliseconds. */
@@ -115,6 +132,8 @@ export interface Timeline {
 export interface Scene {
   prosody: PublicProsody;
   analysis: Analysis;
+  /** Optional line under the title, e.g. "— Dhwanit". Shown in the footer of the final frame. */
+  byline?: string;
   mood: MoodPreset;
   format: FormatId;
   speed: number;

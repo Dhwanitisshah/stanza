@@ -1,12 +1,26 @@
 import type { FrameContext } from "@/lib/render/renderFrame";
 
 export interface DrawCall {
-  op: "save" | "restore" | "fillRect" | "fillText" | "drawImage";
+  op: "save" | "restore" | "translate" | "scale" | "fillRect" | "fillText" | "drawImage";
   args: unknown[];
   /** Canvas state at the moment of the call. */
   alpha: number;
   fill: string;
   font: string;
+  shadowBlur: number;
+  shadowColor: string;
+  shadowOffsetX: number;
+}
+
+interface DrawingState {
+  fillStyle: string;
+  font: string;
+  globalAlpha: number;
+  textAlign: CanvasTextAlign;
+  textBaseline: CanvasTextBaseline;
+  shadowBlur: number;
+  shadowColor: string;
+  shadowOffsetX: number;
 }
 
 /**
@@ -20,22 +34,44 @@ export class RecordingContext {
   globalAlpha = 1;
   textAlign: CanvasTextAlign = "start";
   textBaseline: CanvasTextBaseline = "alphabetic";
-  private stack: { fillStyle: string; font: string; globalAlpha: number; textAlign: CanvasTextAlign; textBaseline: CanvasTextBaseline }[] = [];
+  shadowBlur = 0;
+  shadowColor = "rgba(0, 0, 0, 0)";
+  shadowOffsetX = 0;
+  private stack: DrawingState[] = [];
+
+  private state(): DrawingState {
+    const { fillStyle, font, globalAlpha, textAlign, textBaseline, shadowBlur, shadowColor, shadowOffsetX } = this;
+    return { fillStyle, font, globalAlpha, textAlign, textBaseline, shadowBlur, shadowColor, shadowOffsetX };
+  }
 
   private record(op: DrawCall["op"], args: unknown[]) {
-    this.calls.push({ op, args, alpha: this.globalAlpha, fill: String(this.fillStyle), font: this.font });
+    this.calls.push({
+      op,
+      args,
+      alpha: this.globalAlpha,
+      fill: String(this.fillStyle),
+      font: this.font,
+      shadowBlur: this.shadowBlur,
+      shadowColor: this.shadowColor,
+      shadowOffsetX: this.shadowOffsetX,
+    });
   }
 
   // Like a real canvas, save() snapshots the drawing state and restore() puts it back.
   save() {
     this.record("save", []);
-    const { fillStyle, font, globalAlpha, textAlign, textBaseline } = this;
-    this.stack.push({ fillStyle, font, globalAlpha, textAlign, textBaseline });
+    this.stack.push(this.state());
   }
   restore() {
     this.record("restore", []);
     const saved = this.stack.pop();
     if (saved) Object.assign(this, saved);
+  }
+  translate(...args: number[]) {
+    this.record("translate", args);
+  }
+  scale(...args: number[]) {
+    this.record("scale", args);
   }
   fillRect(...args: number[]) {
     this.record("fillRect", args);
@@ -58,5 +94,9 @@ export class RecordingContext {
 
   texts(): DrawCall[] {
     return this.calls.filter((c) => c.op === "fillText");
+  }
+
+  rects(): DrawCall[] {
+    return this.calls.filter((c) => c.op === "fillRect");
   }
 }

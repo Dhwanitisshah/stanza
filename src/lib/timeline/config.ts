@@ -36,6 +36,10 @@ export const TIMING = {
   /** Time the old page takes to clear before the next page starts. */
   pageTransitionMs: 600,
 
+  /** The title and byline fade in this long after the last word has landed, over footerFadeMs. */
+  footerDelayMs: 200,
+  footerFadeMs: 600,
+
   /** The finished poster stays on screen this long. */
   finalHoldMs: 2500,
 

@@ -6,7 +6,7 @@ export type RhymeStrength = "perfect" | "near" | "repeat";
 /** What the rhyme matcher needs to know about a line's last word. */
 export interface RhymeWord {
   core: string;
-  /** All CMU pronunciations; empty for heuristic words (they can only "repeat"). */
+  /** All CMU pronunciations; empty for heuristic words (they rhyme by spelling, as "near" at most). */
   variants: Phonemes[];
 }
 
@@ -72,9 +72,41 @@ function nearTail(a: Phonemes, b: Phonemes): boolean {
 
 const normalize = (core: string) => core.toLowerCase().replace(/'/g, "");
 
+/**
+ * Spelling-based rhyme key for words the dictionary does not know: the last vowel group to the end of the word.
+ * "pyaar" -> "aar", "yaar" -> "aar"; a silent e is looked past ("tune" -> "une"). Returns null when there is
+ * nothing usable (no vowel, or fewer than 2 letters of key).
+ */
+export function spellingRhymeKey(core: string): string | null {
+  const word = core.toLowerCase().replace(/[^a-z]/g, "");
+  if (word.length < 2) return null;
+  const hasPlainVowel = /[aeiou]/.test(word);
+  // y is a vowel only in words that have no other vowel (sky, myth).
+  const isVowel = (ch: string) => "aeiou".includes(ch) || (ch === "y" && !hasPlainVowel);
+
+  let last = word.length - 1;
+  const silentE = word.endsWith("e") && word.length > 2 && !isVowel(word[last - 1]) && [...word.slice(0, last - 1)].some(isVowel);
+  if (silentE) last -= 1;
+
+  let i = last;
+  while (i >= 0 && !isVowel(word[i])) i--;
+  if (i < 0) return null;
+  let start = i;
+  while (start > 0 && isVowel(word[start - 1])) start--;
+  const key = word.slice(start);
+  return key.length >= 2 ? key : null;
+}
+
 /** Strength of the rhyme between two words, or null. Identical words are a "repeat", never a rhyme. */
 export function compareWords(a: RhymeWord, b: RhymeWord): RhymeStrength | null {
   if (normalize(a.core) === normalize(b.core)) return "repeat";
+
+  // The dictionary doesn't know one of the words (invented, or from another language): compare spellings.
+  // That is a weaker signal than sound, so it can only ever be a near rhyme.
+  if (a.variants.length === 0 || b.variants.length === 0) {
+    const keyA = spellingRhymeKey(a.core);
+    return keyA !== null && keyA === spellingRhymeKey(b.core) ? "near" : null;
+  }
 
   const tailsA = a.variants.map(rhymeTail);
   const tailsB = b.variants.map(rhymeTail);
