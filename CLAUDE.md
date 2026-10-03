@@ -1,9 +1,10 @@
 # Stanza: project spec (CLAUDE.md)
 
-Solo 24-hour hackathon build. Pair-programmer mode: execute one phase at a time; the user says "next" to continue.
+Solo portfolio build. Pair-programmer mode: execute one phase at a time; the user says "next" to continue.
 
 ## 0. Context
-- Hackathon: FirstCommit (Devpost). Deadline **Fri Oct 2, 2026, 9:30 PM IST**; target submit by **8:30 PM**.
+- No deadline — portfolio build. Each phase must pass `npm run verify` before commit.
+- Originally built for the FirstCommit hackathon (Devpost), whose deadline has passed.
 - Judging: Learning & Growth 30%, Creativity & Impact 25%, Technical Execution 25%, Presentation 20%.
 - Rules: all core work done during the event; repo must be public; significant AI help must be disclosed; judges value the author's understanding over AI-generated code.
 - User: CS student, solo, VS Code on Windows + PowerShell. Use PowerShell-compatible commands and `curl.exe` (not `curl`).
@@ -92,19 +93,18 @@ Input `{ poem: string }`. Cap at 2,000 chars / 40 lines; reject longer with a fr
 At the end of every phase append to `DEVLOG.md`: what was built; the key decision and why; one concept to understand (3-4 lines); any bug hit and the fix. Honest and brief; it becomes the Devpost "what I learned" and demo narration.
 Before complex logic (rhyme detection, timeline, layout, recording) give a 3-5 bullet plan; wait for "ok" only if there is a real design choice. Name things clearly, keep functions small; the author must explain this code to judges.
 
-## 8. Phases (target times, IST)
-| # | Phase | Budget | Done when |
-|---|---|---|---|
-| 0 | Scaffold: Next.js + TS + Tailwind + Vitest; `.env.example`, `.gitignore` (incl. `.env*.local`), DEVLOG.md, README stub, CLAUDE.md; git init; first commit "first commit: scaffold Stanza" | 30m | `npm run dev` + `npm test` pass |
-| 1 | Prosody engine + tests: tokenize, syllables, stress, rhyme scheme | 2h | Tests cover >=3 sample poems incl. rhyme scheme detection |
-| 2 | `/api/analyze` + zod + fallback + rate limit | 1.5h | `scripts/smoke.ps1` hits route (real key + forced fallback) |
-| 3 | Timeline + layout + renderFrame + preview loop with play/pause/scrubber | 3h | Pasted poem animates correctly in both formats |
-| 4 | 6 mood presets, entrances, rhyme echoes, paper texture | 2h | Each mood visually distinct |
-| 5 | Editor UI (editorial paper), tweak controls, share-link encode/decode, 2 public-domain sample poems (pre-1929 only) | 2h | Share link round-trips the exact poster |
-| 6 | Export: video reel + PNG, progress indicator, filename `stanza-<title>.webm/.mp4/.png` | 1.5h | Exported files open and match preview |
-| 7 | Deploy to Vercel, env vars, mobile check, empty/long/weird-input hardening, loading/error states | 1h | Live URL works end to end |
-| 8 | Docs: README, AI disclosure, Devpost draft, demo script | 1.5h | See 9 |
-| - | Buffer + record demo video | 2.5h | Submit by 8:30 PM |
+## 8. Phases
+| # | Phase | Done when |
+|---|---|---|
+| 0 | Scaffold: Next.js + TS + Tailwind + Vitest; `.env.example`, `.gitignore` (incl. `.env*.local`), DEVLOG.md, README stub, CLAUDE.md; git init; first commit "first commit: scaffold Stanza" | `npm run dev` + `npm test` pass |
+| 1 | Prosody engine + tests: tokenize, syllables, stress, rhyme scheme | Tests cover >=3 sample poems incl. rhyme scheme detection |
+| 2 | `/api/analyze` + zod + fallback + rate limit | `scripts/smoke.ps1` hits route (real key + forced fallback) |
+| 3 | Timeline + layout + renderFrame + preview loop with play/pause/scrubber | Pasted poem animates correctly in both formats |
+| 4 | 6 mood presets, entrances, rhyme echoes, paper texture | Each mood visually distinct |
+| 5 | Editor UI (editorial paper), tweak controls, share-link encode/decode, 2 public-domain sample poems (pre-1929 only) | Share link round-trips the exact poster |
+| 6 | Export: video reel + PNG, progress indicator, filename `stanza-<title>.webm/.mp4/.png` | Exported files open and match preview |
+| 7 | Deploy to Vercel, env vars, mobile check, empty/long/weird-input hardening, loading/error states | Live URL works end to end |
+| 8 | Docs: README, AI disclosure, Devpost draft, demo script | See 9 |
 
 Commit at the end of every phase with a clear message, e.g. `phase 1: prosody engine + tests`.
 
@@ -119,4 +119,4 @@ State honestly: Claude Code used as a pair-programmer for scaffolding and implem
 - No localStorage dependency for core features.
 - Don't add libraries beyond what's needed. Ask before adding anything heavy.
 - Copyright: sample poems must be public domain (pre-1929). Never bundle copyrighted poems.
-- If a phase runs >30 min over budget, stop and propose a scope cut.
+- If a phase grows much larger than planned, stop and propose a scope cut.
