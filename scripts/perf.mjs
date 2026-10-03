@@ -22,8 +22,7 @@ try {
   const page = await openPage(9360, url);
   const app = harness(page);
 
-  await app.setPoem(fixtures[name]);
-  await app.analyze();
+  await app.perform(fixtures[name]);
   await page.waitFor(`!!document.querySelector("canvas")`, "the first poster", 60_000);
 
   console.log(`fixture: ${name}   (${SEEKS} frames spread across the animation, per mood)\n`);
@@ -31,7 +30,7 @@ try {
   for (const mood of moods) {
     await app.setMood(mood);
     await page.waitFor(`document.querySelector("canvas")?.dataset.mood === ${JSON.stringify(mood)}`, `${mood} poster`, 60_000);
-    await app.pause();
+    await app.settle(300);
     const total = await app.totalMs();
     const before = page.consoleLines.length;
     for (let i = 0; i < SEEKS; i++) {

@@ -3,7 +3,7 @@
 import type { MoodPreset } from "@/lib/moods/types";
 import type { PublicProsody } from "@/lib/prosody";
 import { FOOTER_FONT_SIZE, fontString } from "./fonts";
-import type { FooterLine, FormatId, Layout, LayoutPage, MeasureText, Piece, PlacedWord, Rect } from "./types";
+import type { FooterLine, FormatId, Layout, LayoutPage, MeasureText, Piece, PlacedWord, Rect, TitlePlacement } from "./types";
 
 export const FORMATS: Record<FormatId, { width: number; height: number }> = {
   reel: { width: 1080, height: 1920 }, // 9:16
@@ -35,6 +35,11 @@ export const LAYOUT_CONFIG = {
   footerMinFontSize: 18,
   /** Where the baseline sits in an em box (most fonts: ascent is about 80% of the font size). */
   ascentRatio: 0.8,
+  /** A title above the poem is drawn this much larger than the poem, and sits one em above the first stanza. */
+  titleScale: 1.2,
+  titleGapEm: 1,
+  /** A long title shrinks to at most this fraction of its size, then is cut with an ellipsis. */
+  titleMinScale: 0.6,
   /** Extra space between stanzas, in em. */
   stanzaGapEm: 0.8,
 } as const;
@@ -72,6 +77,10 @@ interface Metrics {
   space: number;
   availFirst: number;
   availNext: number;
+  /** The title drawn above the poem (page 0 only), already fitted to one row; null if there is none. */
+  title: { text: string; font: string; fontSize: number; width: number } | null;
+  /** Vertical space the title takes at the top of page 0 (its row plus the gap below it). */
+  titleHeight: number;
 }
 
 function safeAreaFor(format: FormatId): Rect {
@@ -170,7 +179,7 @@ function wrapLine(
   return { rows, wordsFit };
 }
 
-function metricsFor(size: number, mood: MoodPreset, safe: Rect, measure: MeasureText): Metrics {
+function metricsFor(size: number, mood: MoodPreset, safe: Rect, measure: MeasureText, titleText: string | null): Metrics {
   const family = mood.typography.display;
   const font = fontString({ family, weight: mood.typography.weight, italic: false, size });
   const emphasisFont = fontString({ family, weight: mood.emphasis.weight, italic: mood.emphasis.italic, size: size * mood.emphasis.scale });
@@ -185,6 +194,19 @@ function metricsFor(size: number, mood: MoodPreset, safe: Rect, measure: Measure
     space: measure(" ", font),
     availFirst: safe.width,
     availNext: safe.width - indent,
+    ...titleMetrics(titleText, size, mood, safe.width, measure),
+  };
+}
+
+/** The title is set in the poem's typeface, a little larger, and shrunk (then cut) to fit one row. */
+function titleMetrics(text: string | null, size: number, mood: MoodPreset, maxWidth: number, measure: MeasureText) {
+  if (!text) return { title: null, titleHeight: 0 };
+  const spec = { family: mood.typography.display, weight: mood.typography.weight, italic: mood.footer.italic };
+  const fitted = fitText(text, spec, size * LAYOUT_CONFIG.titleScale, size * LAYOUT_CONFIG.titleMinScale, maxWidth, measure);
+  const fontSize = Number(/(\d+(?:\.\d+)?)px/.exec(fitted.font)?.[1] ?? size);
+  return {
+    title: { text: fitted.text, font: fitted.font, fontSize, width: measure(fitted.text, fitted.font) },
+    titleHeight: fontSize * mood.typography.lineHeight + size * LAYOUT_CONFIG.titleGapEm,
   };
 }
 
@@ -212,6 +234,8 @@ const blockOf = (lines: LineRows[], rowHeight: number): Block => ({
 
 /** Packs whole stanzas onto pages. A stanza taller than a page is split at line boundaries. */
 function pack(lines: LineRows[], m: Metrics, usable: number): Block[][] {
+  // Page 0 also carries the title, so it has less room than the others.
+  const capacity = (pageNo: number) => usable - (pageNo === 0 ? m.titleHeight : 0);
   const stanzas: LineRows[][] = [];
   for (const line of lines) {
     const last = stanzas[stanzas.length - 1];
@@ -232,10 +256,10 @@ function pack(lines: LineRows[], m: Metrics, usable: number): Block[][] {
     const block = blockOf(stanza, m.rowHeight);
     const gap = current.length ? m.gap : 0;
 
-    if (used + gap + block.height <= usable) {
+    if (used + gap + block.height <= capacity(pages.length)) {
       current.push(block);
       used += gap + block.height;
-    } else if (block.height <= usable) {
+    } else if (block.height <= capacity(pages.length + (current.length ? 1 : 0))) {
       flush();
       current = [block];
       used = block.height;
@@ -245,7 +269,7 @@ function pack(lines: LineRows[], m: Metrics, usable: number): Block[][] {
       let chunkHeight = 0;
       for (const line of stanza) {
         const lineHeight = line.rows.length * m.rowHeight;
-        if (chunk.length && chunkHeight + lineHeight > usable) {
+        if (chunk.length && chunkHeight + lineHeight > capacity(pages.length)) {
           pages.push([blockOf(chunk, m.rowHeight)]);
           chunk = [];
           chunkHeight = 0;
@@ -288,16 +312,25 @@ interface Plan {
  *   (c) only if some line cannot fit unwrapped even at minFontSize: stay at minFontSize and wrap just
  *       those lines, with a hanging indent.
  */
-function plan(prosody: PublicProsody, emphasized: ReadonlySet<string>, mood: MoodPreset, safe: Rect, measure: MeasureText): Plan {
+function plan(
+  prosody: PublicProsody,
+  emphasized: ReadonlySet<string>,
+  mood: MoodPreset,
+  safe: Rect,
+  measure: MeasureText,
+  titleText: string | null,
+): Plan {
   const { maxFontSize, absoluteMinFontSize } = LAYOUT_CONFIG;
   const minFontSize = mood.minFontSize ?? LAYOUT_CONFIG.minFontSize;
   const attempt = (size: number, allowSplit: boolean) => {
-    const metrics = metricsFor(size, mood, safe, measure);
+    const metrics = metricsFor(size, mood, safe, measure, titleText);
     const { lines, wordsFit } = wrapAll(prosody, emphasized, metrics, measure, allowSplit);
     const tallestLine = lines.reduce((max, l) => Math.max(max, l.rows.length * metrics.rowHeight), 0);
     const pages = pack(lines, metrics, safe.height);
     // pack() puts an over-tall line on a page of its own, so check that every page really fits.
-    const pagesFit = pages.every((blocks) => pageHeight(blocks, metrics.gap) <= safe.height);
+    const pagesFit = pages.every(
+      (blocks, i) => pageHeight(blocks, metrics.gap) <= safe.height - (i === 0 ? metrics.titleHeight : 0),
+    );
     const unwrapped = wordsFit && lines.every((l) => l.rows.length === 1);
     return { metrics, lines, wordsFit, tallestLine, pages, pagesFit, unwrapped };
   };
@@ -325,16 +358,21 @@ function plan(prosody: PublicProsody, emphasized: ReadonlySet<string>, mood: Moo
   let size = minFontSize;
   let a = attempt(size, true);
   // One line alone taller than a page (for example a 2,000-character line): shrink until a line fits a page.
-  while (a.tallestLine > safe.height && size > absoluteMinFontSize) {
+  while (a.tallestLine > safe.height - a.metrics.titleHeight && size > absoluteMinFontSize) {
     size -= 2;
     a = attempt(size, true);
   }
   return result(a);
 }
 
+/** Where a page's content starts (the title, if any, first), centred vertically in the content area. */
+function pageTop(blocks: Block[], m: Metrics, safe: Rect, pageIndex: number): number {
+  const titleHeight = pageIndex === 0 ? m.titleHeight : 0;
+  return safe.y + Math.max(0, (safe.height - (titleHeight + pageHeight(blocks, m.gap))) / 2);
+}
+
 function placeWords(blocks: Block[], m: Metrics, safe: Rect, align: "left" | "center", pageIndex: number): PlacedWord[] {
-  const contentHeight = pageHeight(blocks, m.gap);
-  let y = safe.y + Math.max(0, (safe.height - contentHeight) / 2);
+  let y = pageTop(blocks, m, safe, pageIndex) + (pageIndex === 0 ? m.titleHeight : 0);
 
   const placed = new Map<string, PlacedWord>();
   const order: string[] = [];
@@ -382,32 +420,39 @@ function placeWords(blocks: Block[], m: Metrics, safe: Rect, align: "left" | "ce
 
 const NO_EMPHASIS: ReadonlySet<string> = new Set();
 
-export interface FooterInput {
-  title: string;
-  /** For example "— Dhwanit". */
+/** What goes around the poem: the user's title (and where), and an optional byline. */
+export interface LayoutExtras {
+  title?: string;
+  titlePlacement?: TitlePlacement;
   byline?: string;
 }
 
 const MAX_FOOTER_CHARS = 120;
 
-/** Shrinks the footer text to fit one row; as a last resort cuts it and adds an ellipsis. */
-function fitFooterText(text: string, spec: { family: string; weight: number; italic: boolean }, maxWidth: number, measure: MeasureText) {
-  const { footerMinFontSize } = LAYOUT_CONFIG;
-  for (let size = FOOTER_FONT_SIZE; size >= footerMinFontSize; size--) {
+/** Shrinks text from startSize down to minSize to fit one row; as a last resort cuts it and adds an ellipsis. */
+function fitText(
+  text: string,
+  spec: { family: string; weight: number; italic: boolean },
+  startSize: number,
+  minSize: number,
+  maxWidth: number,
+  measure: MeasureText,
+) {
+  for (let size = Math.floor(startSize); size >= Math.ceil(minSize); size--) {
     const font = fontString({ ...spec, size });
     if (measure(text, font) <= maxWidth) return { text, font };
   }
-  const font = fontString({ ...spec, size: footerMinFontSize });
+  const font = fontString({ ...spec, size: Math.ceil(minSize) });
   const [first] = splitToFit(text, maxWidth - measure("\u2026", font), maxWidth, font, measure);
   return { text: (first ?? "") + "\u2026", font };
 }
 
 /** Title above byline, bottom-aligned in the safe area, aligned like the poem. */
-function footerLines(footer: FooterInput | undefined, mood: MoodPreset, safe: Rect, measure: MeasureText): FooterLine[] {
+function footerLines(footer: { title?: string; byline?: string } | undefined, mood: MoodPreset, safe: Rect, measure: MeasureText): FooterLine[] {
   if (!footer) return [];
   const { typography, footer: style } = mood;
   const spec = { family: style.font === "display" ? typography.display : typography.body, weight: style.weight, italic: style.italic };
-  const texts = [footer.title, footer.byline ?? ""]
+  const texts = [footer.title ?? "", footer.byline ?? ""]
     .map((t) => t.trim().slice(0, MAX_FOOTER_CHARS))
     .filter(Boolean)
     .map((t) => (style.uppercase ? t.toUpperCase() : t));
@@ -415,7 +460,7 @@ function footerLines(footer: FooterInput | undefined, mood: MoodPreset, safe: Re
   const lineHeight = FOOTER_FONT_SIZE * LAYOUT_CONFIG.footerLineHeightEm;
   const lastBaseline = safe.y + safe.height - LAYOUT_CONFIG.footerBaselineInset;
   return texts.map((text, i) => {
-    const fitted = fitFooterText(text, spec, safe.width, measure);
+    const fitted = fitText(text, spec, FOOTER_FONT_SIZE, LAYOUT_CONFIG.footerMinFontSize, safe.width, measure);
     const width = measure(fitted.text, fitted.font);
     const x = typography.align === "center" ? safe.x + (safe.width - width) / 2 : safe.x;
     return { text: fitted.text, x, y: lastBaseline - (texts.length - 1 - i) * lineHeight, font: fitted.font };
@@ -424,7 +469,7 @@ function footerLines(footer: FooterInput | undefined, mood: MoodPreset, safe: Re
 
 /**
  * @param emphasized ids of emphasised words. They are measured in the emphasis font, so they fit as drawn.
- * @param footer title and optional byline, drawn in a strip at the bottom of the safe area
+ * @param extras the user's title (above the poem, in the footer, or hidden) and an optional byline
  */
 export function layout(
   prosody: PublicProsody,
@@ -432,18 +477,33 @@ export function layout(
   mood: MoodPreset,
   measureText: MeasureText,
   emphasized: ReadonlySet<string> = NO_EMPHASIS,
-  footer?: FooterInput,
+  extras: LayoutExtras = {},
 ): Layout {
   const safeArea = safeAreaFor(format);
   const measure = cachedMeasure(measureText);
   // The poem lives above the footer strip.
   const contentArea: Rect = { ...safeArea, height: safeArea.height - LAYOUT_CONFIG.footerReserve };
-  const { metrics, pages } = plan(prosody, emphasized, mood, contentArea, measure);
+  const title = (extras.title ?? "").trim().slice(0, MAX_FOOTER_CHARS);
+  const placement = extras.titlePlacement ?? "footer";
+  const titleAbove = placement === "above" && title !== "" ? title : null;
+  const { metrics, pages } = plan(prosody, emphasized, mood, contentArea, measure, titleAbove);
 
   const layoutPages: LayoutPage[] = pages.map((blocks, index) => ({
     index,
     words: placeWords(blocks, metrics, contentArea, mood.typography.align, index),
   }));
+
+  const titleBlock: FooterLine | null = metrics.title
+    ? {
+        text: metrics.title.text,
+        x: mood.typography.align === "center" ? contentArea.x + (contentArea.width - metrics.title.width) / 2 : contentArea.x,
+        y:
+          pageTop(pages[0] ?? [], metrics, contentArea, 0) +
+          (metrics.title.fontSize * mood.typography.lineHeight - metrics.title.fontSize) / 2 +
+          metrics.title.fontSize * LAYOUT_CONFIG.ascentRatio,
+        font: metrics.title.font,
+      }
+    : null;
 
   const pageOfLine: number[] = [];
   for (const page of layoutPages) for (const word of page.words) pageOfLine[word.lineIndex] = page.index;
@@ -459,6 +519,7 @@ export function layout(
     baseline: (metrics.rowHeight - metrics.size) / 2 + metrics.size * LAYOUT_CONFIG.ascentRatio,
     pages: layoutPages,
     pageOfLine,
-    footer: footerLines(footer, mood, safeArea, measure),
+    title: titleBlock,
+    footer: footerLines({ title: placement === "footer" ? title : "", byline: extras.byline }, mood, safeArea, measure),
   };
 }

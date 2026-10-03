@@ -187,6 +187,17 @@ export function renderFrame(ctx: FrameContext, scene: Scene, t: number, resource
   resetShadow(ctx);
   let currentFont = "";
 
+  // The title above the poem fades in first, and leaves with page 0.
+  if (index.title) {
+    const alpha = clamp01((time - index.titleStart) / index.titleDuration) * pageAlpha(index, 0, time);
+    if (alpha > 0) {
+      ctx.font = index.title.font;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = index.ink;
+      ctx.fillText(index.title.text, index.title.x, index.title.y);
+    }
+  }
+
   const words = index.words;
   for (let w = 0; w < words.length; w++) {
     const word = words[w];

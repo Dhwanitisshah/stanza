@@ -30,6 +30,15 @@ export function spokenBeats(word: Pick<PublicWord, "stress" | "syllables">): num
   return digits.reduce((sum, digit) => sum + syllableMultiplier(digit), 0);
 }
 
+export interface TimelineOptions {
+  /** Extra time the finished poster holds, on top of the standard final hold (from the length control). */
+  extraHoldMs?: number;
+  /** false drops the rhyme echoes. Default true. */
+  echoes?: boolean;
+  /** A title is shown above the poem: it fades in first and the first word waits for it. */
+  title?: boolean;
+}
+
 /**
  * @param pageOfLine page index of each line (from the layout). Omit for a single page.
  */
@@ -39,7 +48,9 @@ export function buildTimeline(
   mood: MoodPreset,
   speed: number,
   pageOfLine: number[] = [],
+  options: TimelineOptions = {},
 ): Timeline {
+  const { extraHoldMs = 0, echoes = true, title = false } = options;
   const beat = mood.beatMs / clampSpeed(speed);
   const ms = (beats: number) => Math.round(beats * beat);
   const emphasised = new Set(analysis.emphasis);
@@ -50,6 +61,10 @@ export function buildTimeline(
   const endWordOfLine = new Map<number, string>();
 
   let cursor: number = TIMING.leadInMs;
+  if (title && lines.length > 0) {
+    events.push({ type: "title", start: TIMING.leadInMs, duration: TIMING.titleFadeMs });
+    cursor += TIMING.titleLeadMs;
+  }
   let lastWordEnd: number = cursor;
 
   lines.forEach((line, i) => {
@@ -107,7 +122,7 @@ export function buildTimeline(
   });
 
   // When the later rhyme partner lands, the earlier one pulses.
-  for (const pair of prosody.rhymePairs) {
+  for (const pair of echoes ? prosody.rhymePairs : []) {
     const earlier = endWordOfLine.get(pair.a);
     const later = endWordOfLine.get(pair.b);
     const start = later ? startOf.get(later) : undefined;
@@ -132,6 +147,6 @@ export function buildTimeline(
 
   // The footer fades in during the final hold, so it does not count towards when the poem itself is done.
   const lastEventEnd = events.reduce((max, e) => (e.type === "footer" ? max : Math.max(max, e.start + e.duration)), 0);
-  const totalMs = Math.max(lastWordEnd, lastEventEnd) + TIMING.finalHoldMs;
+  const totalMs = Math.max(lastWordEnd, lastEventEnd) + TIMING.finalHoldMs + Math.max(0, Math.round(extraHoldMs));
   return { events, totalMs };
 }

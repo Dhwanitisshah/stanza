@@ -156,21 +156,63 @@ npm test -- timeline
 
 ## Phase 5: Editor UI + share links
 
-- [ ] The landing page loads in the editorial-paper style (off-white, serif, ink-black).
-- [ ] Sample poems load and are public domain (pre-1929) or your own originals.
-- [ ] The mood, palette, speed and format controls update the preview live.
-- [ ] Re-roll emphasis changes which words are emphasised.
+Automatic first (a real browser against the production build; it checks share links, the rhythm strip, the length
+control, touch-target sizes and accessible names):
+```powershell
+npm run build
+npm run ui-check      # expect: 21/21 checks passed
+```
+
+Then by hand, with `npm run dev` at http://localhost:3000:
+
+**Landing page**
+- [ ] It looks like `design/landing.png`: headline, optional title, poem box, "Perform it", the two samples, "How Stanza reads a poem".
+- [ ] "The Lamp" and "A Poison Tree" fill the poem box. "Perform it" with an empty box shows a friendly message, not a blank editor.
+- [ ] Pasting 41+ lines or 2,001+ characters shows the limit message on the landing page itself.
+
+**Editor layout** (compare with `design/editor.png`)
+- [ ] Left: title, poem, "Read it again", Stanza's reading, What Stanza heard (rhyme letters, scheme, lines, words, syllables). Centre: poster + transport. Right: Mood | Text | Background | Timing, with the export buttons pinned under them.
+- [ ] The title is empty until you set one: with a suggestion available you see "Suggested: A Patient Moon" and a "Use it" button. The poster shows no title until you press it or type one.
+- [ ] Mood tab: six cards with an "Aa" swatch in each mood's own font and colours; the AI's pick is labelled "Stanza's read". Clicking a card restyles the poster. The three palette dots change the colours.
+- [ ] Text tab: title placement (Above poem / In footer / Hidden) moves the title on the poster; the byline appears small in the footer with a dash. Line colours and Important words are visible but marked "Coming next".
+- [ ] Background tab is visible and marked "Coming next". Nothing in it changes the poster yet.
+- [ ] "Read it again" after editing the poem updates the reading, the rhyme letters and the poster.
+
+**Rhythm strip** (new)
+- [ ] One bar per word. Tall black = stressed, short beige = unstressed, red = emphasis, empty space = rests (commas, line ends, stanza breaks are visibly wider gaps).
+- [ ] Bars up to the playhead are solid; later bars are faded. The red playhead line moves while it plays.
+- [ ] Click a bar: the poster jumps to the moment that word lands, and that word is the last one showing. Click in a gap: it jumps to the nearest word.
+- [ ] Drag across the strip: the poster scrubs. Scrub to the same bar twice: the frame is identical.
+- [ ] Keyboard: Tab to the strip (a focus ring appears), then Right/Left arrows step one word at a time, Home/End go to the first and last word. A screen reader says e.g. "Word 5 of 26, quiet, 0:07.4".
+- [ ] Space plays and pauses (but not while typing in a box).
+
+**Timing tab: format, length, echoes** (new)
+- [ ] Reel/Post toggles the canvas between 1080 x 1920 and 1080 x 1350 and re-lays out the poem.
+- [ ] Auto plays at the natural pace; the note under the buttons says so and gives the duration.
+- [ ] 15 s, 30 s and 60 s: the time readout next to the play button ends within 0.1 s of the chosen length.
+- [ ] 60 s on a short poem keeps the slowest readable pace (0.5x) and says the finished poster holds longer; the poem itself does not crawl.
+- [ ] Any length shorter than the poem can be read is greyed out (7 s for the ABAB poem), with a note giving the shortest readable length. The Custom slider cannot go below it.
+- [ ] Changing mood, title or format updates the shortest readable length and re-checks which presets are available.
+- [ ] Rhyme echoes switch: off removes the accent pulses on rhyming words; on brings them back.
 
 **Share link round-trip**
-1. Style a poem, then click Copy link.
+1. Style a poem (mood, palette, title above, byline, Post, 30 s, echoes off), then click Copy share link.
 2. Open it in an **Incognito** window.
-- [ ] The poster is identical, with the same poem, mood, palette, speed and format.
-- [ ] Opening the link didn't trigger a Gemini call. Check the server terminal: there should be no AI request logged.
+- [ ] The poster is identical: same poem, title, placement, byline, mood, palette, format, length and echo setting. Scrub to the same moments in both windows and compare.
+- [ ] The reading line says "Restored from a share link", and the server terminal shows an analyze request with source=skipped (no Gemini call).
+- [ ] Edit the link: delete half of the part after `#p=`. You get a friendly "link looks damaged" message on the landing page, not a white screen.
+- [ ] A link from an older version (or with an unknown version) opens the editor with your poem and explains that the settings could not be restored.
 
-3. Corrupt the URL by deleting half the hash.
-- [ ] You get a friendly "link is broken" message, not a white screen.
+**Mobile** (compare with `design/mobile.png`; use DevTools device mode at 360 and 390 wide, or a real phone)
+- [ ] No horizontal scrolling at 360 px, on the landing page and in the editor.
+- [ ] Order is: poster, transport, rhythm strip, then tabs (Poem | Mood | Text | Backdrop | Timing), with a sticky Export / Share bar at the bottom. The tabs are visible without scrolling on a 390 x 844 screen.
+- [ ] The Poem tab holds the title, the poem box and Stanza's reading.
 
----
+**Accessibility**
+- [ ] Tab through the whole editor with the keyboard: every control gets a visible accent-coloured focus ring.
+- [ ] Mood cards, palette dots, title placement, length presets, format and Loop report their on/off state (aria-pressed); tabs report aria-selected; the echoes switch is a switch.
+- [ ] Every control is at least 44 px tall (`npm run ui-check` verifies this).
+- [ ] With "reduce motion" turned on in the operating system, opening a poem shows the finished poster and plays only when you press Play.
 
 ## Phase 6: Export
 

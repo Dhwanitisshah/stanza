@@ -91,7 +91,7 @@ export async function launchBrowser(debugPort) {
 export async function openPage(
   debugPort,
   url,
-  { width = 1100, height = 1500, ready = 'document.readyState === "complete" && !!document.querySelector("textarea")' } = {},
+  { width = 1280, height = 1000, ready = 'document.readyState === "complete" && !!document.querySelector("textarea")' } = {},
 ) {
   const target = await (await fetch(`http://127.0.0.1:${debugPort}/json/new?${encodeURIComponent(url)}`, { method: "PUT" })).json();
   const ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -147,29 +147,76 @@ export async function openPage(
     return Buffer.from(response.result.data, "base64");
   };
 
-  return { send, evaluate, waitFor, consoleLines, screenshot, close: () => ws.close() };
+  /** Loads a URL in this page and waits for it to be ready. */
+  const navigate = async (to, isReady = ready) => {
+    await send("Page.navigate", { url: to });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitFor(isReady, "the page to load");
+  };
+
+  return { send, evaluate, waitFor, consoleLines, screenshot, navigate, close: () => ws.close() };
 }
 
-/** Helpers that operate the TEMP dev harness the way a person would. */
+/** Helpers that operate the real app (landing page, then the editor) the way a person would. */
 export function harness(page) {
   const setNative = (selector, prototype, value) =>
     page.evaluate(`(() => {
       const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) throw new Error("No element " + ${JSON.stringify(selector)});
       Object.getOwnPropertyDescriptor(${prototype}.prototype, "value").set.call(el, ${JSON.stringify(String(value))});
-      el.dispatchEvent(new Event(${prototype === "HTMLSelectElement" ? '"change"' : '"input"'}, { bubbles: true }));
+      el.dispatchEvent(new Event("input", { bubbles: true }));
     })()`);
-  const clickButton = (text) =>
-    page.evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === ${JSON.stringify(text)})?.click() ?? "no button"`);
+  const clickText = (scope, text) =>
+    page.evaluate(`(() => {
+      const scope = document.querySelector(${JSON.stringify(scope)}) ?? document;
+      const button = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith(${JSON.stringify(text)}) && !b.disabled);
+      if (!button) throw new Error("No enabled button starting with " + ${JSON.stringify(text)});
+      button.click();
+    })()`);
+  const tab = (name) => page.evaluate(`document.querySelector('[role=tab][aria-label="${name}"]').click()`);
+  const settle = (ms = 400) => page.evaluate(`new Promise((r) => setTimeout(r, ${ms}))`);
 
   return {
-    setPoem: (text) => setNative("textarea", "HTMLTextAreaElement", text),
-    setMood: (mood) => setNative('select[aria-label="Mood"]', "HTMLSelectElement", mood),
-    setByline: (text) => setNative('input[aria-label="Byline"]', "HTMLInputElement", text),
-    setFormat: (format) => page.evaluate(`document.querySelector('input[type=radio][value="${format}"]').click()`),
-    analyze: () => clickButton("Analyze"),
-    pause: () => clickButton("Pause"),
-    seek: (ms) => setNative("input[type=range]", "HTMLInputElement", ms),
-    totalMs: () => page.evaluate(`Number(document.querySelector("input[type=range]").max)`),
+    /**
+     * Landing page: type the poem and press "Perform it". Retries until the editor opens, because text typed
+     * before React has hydrated is wiped when hydration finishes.
+     */
+    async perform(poem, title = "") {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        await setNative("#landing-poem", "HTMLTextAreaElement", poem);
+        if (title) await setNative("#landing-title", "HTMLInputElement", title);
+        await clickText("main", "Perform it");
+        const end = Date.now() + 2000;
+        while (Date.now() < end) {
+          if (await page.evaluate('!!document.querySelector("#editor-poem")')) return;
+          await settle(100);
+        }
+      }
+      throw new Error("The editor did not open after pressing Perform it.");
+    },
+    async setMood(mood) {
+      await tab("Mood");
+      await page.evaluate(`document.querySelector('[role=group][aria-label="Mood"] button[data-mood="${mood}"]').click()`);
+    },
+    async setFormat(format) {
+      await tab("Timing");
+      await clickText('[role=group][aria-label="Format"]', format === "reel" ? "Reel" : "Post");
+    },
+    async setByline(text) {
+      await tab("Text");
+      await setNative("#byline", "HTMLInputElement", text);
+      await settle(600); // the editor waits for typing to stop before rebuilding
+    },
+    /** Accepts the suggested title (the poster shows a title only when the user sets or accepts one). */
+    async useSuggestedTitle() {
+      await page.waitFor(`!!document.querySelector('button[aria-label^="Use the suggested title"]')`, "the title suggestion");
+      await page.evaluate(`document.querySelector('button[aria-label^="Use the suggested title"]').click()`);
+      await settle(600);
+    },
+    /** Pause and jump to an exact time (the canvas listens for "stanza:seek"). */
+    seek: (ms) => page.evaluate(`document.querySelector("canvas").dispatchEvent(new CustomEvent("stanza:seek", { detail: ${Number(ms)} }))`),
+    totalMs: () => page.evaluate(`Number(document.querySelector("canvas").dataset.totalMs)`),
+    reviewMs: () => page.evaluate(`Number(document.querySelector("canvas").dataset.reviewMs)`),
     canvasInfo: () =>
       page.evaluate(`(() => {
         const c = document.querySelector("canvas");
@@ -179,5 +226,6 @@ export function harness(page) {
       const dataUrl = await page.evaluate(`document.querySelector("canvas").toDataURL("image/png")`);
       return Buffer.from(dataUrl.split(",")[1], "base64");
     },
+    settle,
   };
 }

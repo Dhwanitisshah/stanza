@@ -3,8 +3,12 @@
 import type { Analysis } from "@/lib/ai/schema";
 import type { EntranceStyle, MoodPreset } from "@/lib/moods/types";
 import type { PublicProsody } from "@/lib/prosody";
+import type { LengthSolution } from "@/lib/timeline/speedForDuration";
 
 export type FormatId = "reel" | "post";
+
+/** Where the user's title goes: above the poem, in the footer, or nowhere. */
+export type TitlePlacement = "above" | "footer" | "hidden";
 
 export interface Rect {
   x: number;
@@ -67,6 +71,8 @@ export interface Layout {
   pages: LayoutPage[];
   /** Page index of each poem line, by global line index. */
   pageOfLine: number[];
+  /** The title drawn above the poem on page 0 (only when the placement is "above"), already positioned. */
+  title: FooterLine | null;
   /** Title and byline in the bottom strip of the safe area (reserved on every page). Empty if neither is set. */
   footer: FooterLine[];
 }
@@ -112,6 +118,13 @@ export interface PageEvent {
   duration: number;
 }
 
+/** A title shown above the poem fades in before the first word. */
+export interface TitleEvent {
+  type: "title";
+  start: number;
+  duration: number;
+}
+
 /** The title and byline fade in during the final hold. */
 export interface FooterEvent {
   type: "footer";
@@ -119,7 +132,7 @@ export interface FooterEvent {
   duration: number;
 }
 
-export type TimelineEvent = AppearEvent | EchoEvent | StanzaDimEvent | PageEvent | FooterEvent;
+export type TimelineEvent = AppearEvent | EchoEvent | StanzaDimEvent | PageEvent | TitleEvent | FooterEvent;
 
 export interface Timeline {
   /** Sorted by start time. All values are integer milliseconds. */
@@ -134,11 +147,16 @@ export interface Scene {
   analysis: Analysis;
   /** The title the user set or accepted (analysis.title is only a suggestion). Undefined = no title on the poster. */
   title?: string;
+  titlePlacement: TitlePlacement;
   /** Optional line under the title, e.g. "— Dhwanit". Shown in the footer of the final frame. */
   byline?: string;
   mood: MoodPreset;
   format: FormatId;
   speed: number;
+  /** false when the rhyme echoes are switched off. */
+  echoes: boolean;
+  /** How the length was reached (speed, extra hold) and the shortest readable duration. */
+  length: LengthSolution;
   layout: Layout;
   timeline: Timeline;
 }

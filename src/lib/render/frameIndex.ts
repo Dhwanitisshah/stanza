@@ -58,6 +58,10 @@ export interface FrameIndex {
   dimTo: number[];
   /** When the last word has finished: dims then fade back so the final frame is the full poster. */
   restoreStart: number;
+  /** The title above the poem (page 0 only) and when it fades in. */
+  title: FooterLine | null;
+  titleStart: number;
+  titleDuration: number;
   footer: FooterLine[];
   footerStart: number;
   footerDuration: number;
@@ -109,6 +113,8 @@ export function buildFrameIndex(scene: Scene): FrameIndex {
   let restoreStart = 0;
   let footerStart = Infinity;
   let footerDuration = 1;
+  let titleStart = 0;
+  let titleDuration = 1;
 
   for (const event of timeline.events) {
     switch (event.type) {
@@ -137,6 +143,10 @@ export function buildFrameIndex(scene: Scene): FrameIndex {
       case "page":
         pageStart[event.pageIndex] = event.start;
         pageDuration[event.pageIndex] = event.duration;
+        break;
+      case "title":
+        titleStart = event.start;
+        titleDuration = Math.max(1, event.duration);
         break;
       case "footer":
         footerStart = event.start;
@@ -172,6 +182,9 @@ export function buildFrameIndex(scene: Scene): FrameIndex {
     dimDuration,
     dimTo,
     restoreStart,
+    title: layout.title,
+    titleStart,
+    titleDuration,
     footer: layout.footer,
     footerStart,
     footerDuration,

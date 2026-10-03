@@ -1,23 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Analysis } from "@/lib/ai/schema";
-import type { MoodId } from "@/lib/moods/ids";
 import { getMoodPreset } from "@/lib/moods/presets";
 import type { PublicProsody } from "@/lib/prosody";
 import { createCanvasMeasure, loadMoodFonts, resolveMoodFonts } from "@/lib/render/browser";
-import { buildScene } from "@/lib/render/scene";
-import type { FormatId, Scene } from "@/lib/render/types";
+import { buildScene, type SceneInput as BuildSceneInput } from "@/lib/render/scene";
+import type { Scene } from "@/lib/render/types";
 
-export interface SceneInput {
-  prosody: PublicProsody;
-  analysis: Analysis;
-  format: FormatId;
-  speed: number;
-  /** Overrides the analysed mood (the user picked one). */
-  mood?: MoodId;
-  byline?: string;
-}
+/** Everything buildScene needs except what the browser supplies (the preset with resolved fonts, and measureText). */
+export type SceneInput = Omit<BuildSceneInput, "measureText" | "preset">;
 
 export type SceneState =
   | { status: "idle" }

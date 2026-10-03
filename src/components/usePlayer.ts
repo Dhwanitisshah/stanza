@@ -68,10 +68,17 @@ export function usePlayer(scene: Scene, canvasRef: RefObject<HTMLCanvasElement |
       event.preventDefault();
       player.toggle();
     };
+    // For the dev tools (scripts/posters.mjs, perf.mjs): pause and jump to an exact time.
+    const onToolSeek = (event: Event) => {
+      player.pause();
+      player.seek(Number((event as CustomEvent<number>).detail));
+    };
+    canvas.addEventListener("stanza:seek", onToolSeek);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
+      canvas.removeEventListener("stanza:seek", onToolSeek);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("keydown", onKeyDown);
       player.pause();

@@ -1,6 +1,5 @@
-import { DevHarness } from "@/components/DevHarness";
+import { App } from "@/components/App";
 
-// TEMP: Phase 5 replaces this with the landing page and editor.
 export default function Home() {
-  return <DevHarness />;
+  return <App />;
 }

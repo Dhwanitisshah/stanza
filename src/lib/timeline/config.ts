@@ -40,12 +40,23 @@ export const TIMING = {
   footerDelayMs: 200,
   footerFadeMs: 600,
 
+  /** A title above the poem fades in first, and the first word waits this long after the lead-in. */
+  titleLeadMs: 1000,
+  titleFadeMs: 700,
+
   /** The finished poster stays on screen this long. */
   finalHoldMs: 2500,
 
   /** Speed is clamped to this range; anything else (NaN, 0, negative) becomes 1. */
   minSpeed: 0.25,
   maxSpeed: 4,
+
+  /**
+   * The range of paces that still read well. The length control (speedForDuration) never leaves it: a longer
+   * target keeps the slowest pace and holds the final poster longer; a shorter one is simply unavailable.
+   */
+  readableMinSpeed: 0.5,
+  readableMaxSpeed: 2.5,
 } as const;
 
 export type PauseKind = keyof typeof TIMING.pauseBeats;

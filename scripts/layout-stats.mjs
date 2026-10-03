@@ -19,9 +19,10 @@ try {
   console.log(["fixture".padEnd(12), "format".padEnd(7), "font px".padStart(8), "pages".padStart(6), "lines".padStart(6), "wrapped".padStart(8)].join("  "));
   for (const name of names) {
     for (const format of ["reel", "post"]) {
-      await app.setPoem(fixtures[name]);
-      await app.setFormat(format);
-      await app.analyze();
+      await page.navigate(url);
+      await app.perform(fixtures[name]);
+      await page.waitFor(`!!document.querySelector("canvas")`, `${name} poster`, 30_000);
+      if (format === "post") await app.setFormat("post");
       await page.waitFor(`(() => { const c = document.querySelector("canvas"); return !!c && c.height === ${format === "reel" ? 1920 : 1350}; })()`, `${name}/${format} canvas`);
       await page.evaluate(`new Promise((r) => setTimeout(r, 200))`);
       const info = await app.canvasInfo();

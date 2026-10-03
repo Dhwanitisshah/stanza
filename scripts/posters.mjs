@@ -1,7 +1,7 @@
 // Renders a fixture poem in all six moods with the REAL app (production build, headless Edge/Chrome) and saves
 // the pixels, so you can look at them side by side.
 //
-//   npm run build && npm run posters -- <fixture> [--format=reel|post] [--byline="— name"]
+//   npm run build && npm run posters -- <fixture> [--format=reel|post] [--byline="name"] [--title=none]
 //
 // Output (gitignored): posters/<fixture>/<Mood>-final.png   the finished poster (the last frame)
 //                      posters/<fixture>/<Mood>-mid.png     a moment mid-animation (a rhyme echo landing)
@@ -18,11 +18,12 @@ const args = process.argv.slice(2);
 const flag = (name, fallback) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const name = args.find((a) => !a.startsWith("--"));
 const format = flag("format", "reel");
-const byline = flag("byline", "— Dhwanit");
+const byline = flag("byline", "Dhwanit Shah");
+const title = flag("title", "suggested"); // "suggested" accepts Stanza's suggestion; "none" shows no title
 
 const fixtures = await loadFixtures();
 if (!name || !(name in fixtures)) {
-  console.error(`Usage: npm run posters -- <fixture> [--format=reel|post] [--byline="— name"]\nFixtures: ${Object.keys(fixtures).join(", ")}`);
+  console.error(`Usage: npm run posters -- <fixture> [--format=reel|post] [--byline="name"] [--title=none]\nFixtures: ${Object.keys(fixtures).join(", ")}`);
   process.exit(1);
 }
 if (format !== "reel" && format !== "post") throw new Error('--format must be "reel" or "post"');
@@ -37,18 +38,18 @@ try {
   const page = await openPage(9350, url);
   const app = harness(page);
 
-  await app.setPoem(fixtures[name]);
+  await app.perform(fixtures[name]);
+  await page.waitFor(`!!document.querySelector("canvas")`, "the first poster", 30_000);
+  if (title !== "none") await app.useSuggestedTitle(); // the poster shows a title only once the user accepts one
   await app.setByline(byline);
-  await app.setFormat(format);
-  await app.analyze();
-  await page.waitFor(`!!document.querySelector("canvas")`, "the first poster");
+  if (format === "post") await app.setFormat("post");
 
   for (const mood of MOODS) {
     await app.setMood(mood);
     await page.waitFor(`document.querySelector("canvas")?.dataset.mood === ${JSON.stringify(mood)}`, `the ${mood} poster (fonts + layout)`, 30_000);
-    await app.pause();
+    await app.settle(300);
 
-    await app.seek((await page.evaluate(`Number(document.querySelector("canvas").dataset.reviewMs)`)));
+    await app.seek(await app.reviewMs());
     await page.evaluate(`new Promise((r) => setTimeout(r, 150))`);
     writeFileSync(join(outDir, `${mood}-mid.png`), await app.canvasPng());
 
