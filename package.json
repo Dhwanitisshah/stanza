@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "typecheck": "next typegen && tsc --noEmit",
     "timeline": "node scripts/timeline.mjs",
+    "layout-stats": "node scripts/layout-stats.mjs",
     "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1"
   },
   "dependencies": {

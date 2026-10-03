@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import type { Scene } from "@/lib/render/types";
+import { layoutStats } from "@/lib/render/layoutStats";
 import { usePlayer } from "./usePlayer";
 
 const formatTime = (ms: number) => {
@@ -18,6 +19,7 @@ export function PreviewCanvas({ scene }: { scene: Scene }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { player, state, totalMs } = usePlayer(scene, canvasRef);
   const { width, height } = scene.layout;
+  const stats = layoutStats(scene.layout);
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -26,6 +28,11 @@ export function PreviewCanvas({ scene }: { scene: Scene }) {
         width={width}
         height={height}
         aria-label="Poem preview"
+        data-font-size={stats.fontSize}
+        data-pages={stats.pages}
+        data-lines={stats.lines}
+        data-wrapped-lines={stats.wrappedLines}
+        data-total-ms={totalMs}
         className="block h-auto max-h-[70vh] w-auto max-w-full border border-black/20 shadow-sm"
       />
 

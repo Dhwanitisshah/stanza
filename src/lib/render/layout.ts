@@ -20,7 +20,7 @@ export const LAYOUT_CONFIG = {
   },
   /** ~44px on a 1080-wide poster is about 16pt on a phone screen: the smallest comfortable size. */
   minFontSize: 44,
-  maxFontSize: 112,
+  maxFontSize: 110,
   /** Only for pathological input (e.g. one 2,000-character line): shrink past the minimum rather than overflow. */
   absoluteMinFontSize: 12,
   /** Wrapped rows are indented by this many em (left-aligned moods only). */
@@ -270,7 +270,15 @@ interface Plan {
   pages: Block[][];
 }
 
-/** Picks the font size and page split. See the plan in the Phase 3a DEVLOG entry. */
+/**
+ * Picks the font size and page split. A poem is verse, so a line break is a poetic decision: lines are kept
+ * whole (one row each) whenever that is possible, in this order of preference:
+ *   (a) the largest size (up to maxFontSize) where NO line wraps and everything fits on one page;
+ *   (b) if that would be smaller than minFontSize: still no wrapping, but whole stanzas on separate pages,
+ *       at the largest size that needs no more pages than minFontSize does;
+ *   (c) only if some line cannot fit unwrapped even at minFontSize: stay at minFontSize and wrap just
+ *       those lines, with a hanging indent.
+ */
 function plan(prosody: PublicProsody, emphasized: ReadonlySet<string>, mood: MoodPreset, safe: Rect, measure: MeasureText): Plan {
   const { minFontSize, maxFontSize, absoluteMinFontSize } = LAYOUT_CONFIG;
   const attempt = (size: number, allowSplit: boolean) => {
@@ -280,38 +288,38 @@ function plan(prosody: PublicProsody, emphasized: ReadonlySet<string>, mood: Moo
     const pages = pack(lines, metrics, safe.height);
     // pack() puts an over-tall line on a page of its own, so check that every page really fits.
     const pagesFit = pages.every((blocks) => pageHeight(blocks, metrics.gap) <= safe.height);
-    return { metrics, lines, wordsFit, tallestLine, pages, pagesFit };
+    const unwrapped = wordsFit && lines.every((l) => l.rows.length === 1);
+    return { metrics, lines, wordsFit, tallestLine, pages, pagesFit, unwrapped };
   };
   const result = (a: ReturnType<typeof attempt>): Plan => ({ metrics: a.metrics, pages: a.pages });
 
-  // 1. Everything on one page at the largest size that fits.
-  const fitsOnePage = (size: number) => {
+  // (a) No wrapping, one page.
+  const unwrappedOnOnePage = (size: number) => {
     const a = attempt(size, false);
-    return a.wordsFit && a.pagesFit && a.pages.length <= 1;
+    return a.unwrapped && a.pagesFit && a.pages.length <= 1;
   };
-  if (fitsOnePage(minFontSize)) return result(attempt(largestWhere(minFontSize, maxFontSize, fitsOnePage), false));
+  if (unwrappedOnOnePage(minFontSize)) return result(attempt(largestWhere(minFontSize, maxFontSize, unwrappedOnOnePage), false));
 
-  // 2. Too much text for one page at the minimum size: split into pages.
-  const atMin = attempt(minFontSize, true);
-  if (atMin.tallestLine > safe.height) {
-    // One line alone is taller than a page (e.g. a 2,000-character line): shrink until a line fits a page.
-    let size = minFontSize;
-    let a = atMin;
-    while (a.tallestLine > safe.height && size > absoluteMinFontSize) {
-      size -= 2;
-      a = attempt(size, true);
-    }
-    return result(a);
+  // (b) No wrapping, but pages.
+  const atMinUnwrapped = attempt(minFontSize, false);
+  if (atMinUnwrapped.unwrapped && atMinUnwrapped.pagesFit) {
+    const pageCount = atMinUnwrapped.pages.length;
+    const unwrappedWithinPages = (size: number) => {
+      const a = attempt(size, false);
+      return a.unwrapped && a.pagesFit && a.pages.length <= pageCount;
+    };
+    return result(attempt(largestWhere(minFontSize, maxFontSize, unwrappedWithinPages), false));
   }
 
-  // Same page count as at the minimum size, but with the largest text that still achieves it.
-  const pageCount = atMin.pages.length;
-  const paged = (size: number) => {
-    const a = attempt(size, false);
-    return a.wordsFit && a.pagesFit && a.pages.length <= pageCount;
-  };
-  const size = largestWhere(minFontSize, maxFontSize, paged);
-  return result(size === minFontSize ? atMin : attempt(size, false));
+  // (c) Some line is too long even at the minimum size: it wraps (and an unbreakable word is split).
+  let size = minFontSize;
+  let a = attempt(size, true);
+  // One line alone taller than a page (for example a 2,000-character line): shrink until a line fits a page.
+  while (a.tallestLine > safe.height && size > absoluteMinFontSize) {
+    size -= 2;
+    a = attempt(size, true);
+  }
+  return result(a);
 }
 
 function placeWords(blocks: Block[], m: Metrics, safe: Rect, align: "left" | "center", pageIndex: number): PlacedWord[] {

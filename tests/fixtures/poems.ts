@@ -40,3 +40,18 @@ export const EDGE_CASES: Record<string, string> = {
   fortyOneLines: Array.from({ length: 41 }, (_, i) => `line ${i}`).join("\n"),
   veryLongWord: "a".repeat(5000),
 };
+
+/** 40 lines in 10 stanzas of 4: the longest poem the API accepts. Used for paging and performance checks. */
+export const FORTY_LINES = Array.from({ length: 40 }, (_, i) => `the quiet rain keeps falling slow ${i + 1}` + (i % 4 === 3 && i < 39 ? "\n" : "")).join("\n");
+
+/** Every named fixture, for the dev tools (timeline table, poster review, layout stats). */
+export const FIXTURES: Record<string, string> = {
+  abab: LAMP_ABAB, // TESTING.md: door/floor, tune/moon
+  aabb: LETTERS_AABB, // TESTING.md: small/wall, old/cold
+  "free-verse": TRAFFIC_FREE_VERSE, // TESTING.md
+  wordsworth: ABAB,
+  blake: AABB,
+  whitman: FREE_VERSE,
+  "forty-lines": FORTY_LINES,
+  ...EDGE_CASES,
+};

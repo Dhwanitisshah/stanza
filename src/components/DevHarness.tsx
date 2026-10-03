@@ -85,7 +85,7 @@ export function DevHarness() {
           <legend className="sr-only">Format</legend>
           {(["reel", "post"] as const).map((id) => (
             <label key={id} className="flex items-center gap-1">
-              <input type="radio" name="format" checked={format === id} onChange={() => setFormat(id)} />
+              <input type="radio" name="format" value={id} checked={format === id} onChange={() => setFormat(id)} />
               {id === "reel" ? "Reel 9:16" : "Post 4:5"}
             </label>
           ))}

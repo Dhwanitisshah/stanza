@@ -5,17 +5,7 @@ import { fallbackAnalysis } from "@/lib/ai/fallback";
 import { analyzePoem, toPublicProsody } from "@/lib/prosody";
 import { buildScene } from "@/lib/render/scene";
 import type { FormatId, MeasureText, TimelineEvent } from "@/lib/render/types";
-import { AABB, ABAB, EDGE_CASES, FREE_VERSE, LAMP_ABAB, LETTERS_AABB, TRAFFIC_FREE_VERSE } from "../tests/fixtures/poems";
-
-const FIXTURES: Record<string, string> = {
-  abab: LAMP_ABAB, // TESTING.md: door/floor, tune/moon
-  aabb: LETTERS_AABB, // TESTING.md: small/wall, old/cold
-  "free-verse": TRAFFIC_FREE_VERSE, // TESTING.md
-  wordsworth: ABAB,
-  blake: AABB,
-  whitman: FREE_VERSE,
-  ...EDGE_CASES,
-};
+import { FIXTURES } from "../tests/fixtures/poems";
 
 const monospace: MeasureText = (text, font) => text.length * Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 16) * 0.6;
 

@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { TENDER } from "@/lib/moods/presets";
 import type { MoodPreset } from "@/lib/moods/types";
 import { FORMATS, LAYOUT_CONFIG, layout } from "@/lib/render/layout";
+import { layoutStats } from "@/lib/render/layoutStats";
 import { buildScene } from "@/lib/render/scene";
 import type { FormatId, Layout } from "@/lib/render/types";
 import { ABAB, AABB, EDGE_CASES, FREE_VERSE, LAMP_ABAB, LETTERS_AABB, TRAFFIC_FREE_VERSE } from "../fixtures/poems";
-import { monospace, prepare, wordIds } from "../helpers";
+import { monospace, narrowSerif, prepare, wordIds } from "../helpers";
 
 const FORMAT_IDS: FormatId[] = ["reel", "post"];
 const EPS = 1e-6;
@@ -274,17 +275,19 @@ describe("layout: emphasised words", () => {
     expect(wouldOverflow).toBeGreaterThan(0);
   });
 
-  it("wraps an emphasised word to the next row when it no longer fits", () => {
-    let wrappedDifferently = 0;
-    for (let k = 1; k <= 60; k++) {
-      const poem = phrase(k);
-      const plain = layout(prepare(poem).prosody, "post", TENDER, monospace);
-      const emphasised = withEmphasis(poem);
-      const lastPlain = plain.pages[0].words[plain.pages[0].words.length - 1];
-      const lastEmph = emphasised.pages[0].words[emphasised.pages[0].words.length - 1];
-      if (plain.fontSize === emphasised.fontSize && lastPlain.box.y !== lastEmph.box.y) wrappedDifferently++;
-    }
-    expect(wrappedDifferently).toBeGreaterThan(0);
+  it("wraps an emphasised word to the next row when its wider font no longer fits", () => {
+    // At the minimum size (44px, 26.4px per character) a row holds 33 characters: 10 + 1 + 11 + 1 + 10.
+    // Plain, the third word ends at 871px and fits in 888px. Emphasised it is 8% wider and does not.
+    const poem = "aaaaaaaaaa bbbbbbbbbbb cccccccccc dddd eeee ffff gggg hhhh iiii";
+    const words = prepare(poem).prosody.stanzas[0].lines[0].words;
+    const plain = layout(prepare(poem).prosody, "reel", TENDER, monospace);
+    const emphasised = layout(prepare(poem).prosody, "reel", TENDER, monospace, new Set([words[2].id]));
+
+    expect(plain.fontSize).toBe(LAYOUT_CONFIG.minFontSize);
+    expect(emphasised.fontSize).toBe(LAYOUT_CONFIG.minFontSize);
+    const yOf = (result: Layout) => result.pages[0].words[2].box.y;
+    expect(yOf(emphasised)).toBeGreaterThan(yOf(plain));
+    expectInsideSafeArea(emphasised);
   });
 
   it("is deterministic and buildScene passes the analysis emphasis through", () => {
@@ -293,5 +296,80 @@ describe("layout: emphasised words", () => {
     const flagged = scene.layout.pages.flatMap((p) => p.words).filter((w) => w.emphasized).map((w) => w.wordId);
     expect(flagged).toEqual(analysis.emphasis);
     expect(analysis.emphasis.length).toBeGreaterThan(0);
+  });
+});
+
+describe("layout: verse-aware sizing", () => {
+  const serif = (poem: string, format: FormatId = "reel") => layout(prepare(poem).prosody, format, TENDER, narrowSerif);
+  const stats = (poem: string, format: FormatId = "reel") => layoutStats(serif(poem, format));
+
+  it("keeps every line of the ABAB fixture on one row, in Reel and Post", () => {
+    for (const format of FORMAT_IDS) {
+      expect(stats(LAMP_ABAB, format)).toMatchObject({ lines: 4, wrappedLines: 0, pages: 1 });
+    }
+  });
+
+  it("does the same for the other TESTING.md fixtures", () => {
+    for (const poem of [LETTERS_AABB, TRAFFIC_FREE_VERSE]) {
+      for (const format of FORMAT_IDS) expect(stats(poem, format)).toMatchObject({ wrappedLines: 0, pages: 1 });
+    }
+  });
+
+  it("(a) picks the largest size where nothing wraps: one more pixel would wrap or overflow", () => {
+    const result = serif(LAMP_ABAB, "reel");
+    const longest = Math.max(...result.pages[0].words.map((w) => w.box.x + w.box.width)) - result.safeArea.x;
+    expect(longest).toBeLessThanOrEqual(result.safeArea.width);
+    // Growing the text by 3% would push the longest row past the safe width, or past the page height.
+    const grown = (result.fontSize + 2) / result.fontSize;
+    const tallerThanPage = 4 * result.rowHeight * grown > result.safeArea.height;
+    expect(longest * grown > result.safeArea.width || tallerThanPage).toBe(true);
+  });
+
+  it("respects the maximum size for a short poem", () => {
+    for (const format of FORMAT_IDS) expect(stats("moon\nsun", format).fontSize).toBe(LAYOUT_CONFIG.maxFontSize);
+    expect(LAYOUT_CONFIG.maxFontSize).toBeLessThanOrEqual(112);
+    expect(LAYOUT_CONFIG.maxFontSize).toBeGreaterThanOrEqual(100);
+  });
+
+  it("(b) below the minimum, keeps lines whole and pages whole stanzas instead", () => {
+    const poem = Array.from({ length: 40 }, (_, i) => "la la la" + (i % 4 === 3 && i < 39 ? "\n" : "")).join("\n");
+    const result = run(poem, "reel");
+    const s = layoutStats(result);
+    expect(s.wrappedLines).toBe(0);
+    expect(s.pages).toBeGreaterThan(1);
+    expect(s.fontSize).toBeGreaterThanOrEqual(LAYOUT_CONFIG.minFontSize);
+    // Stanzas stay whole.
+    const pagesOfStanza = new Map<number, Set<number>>();
+    for (const page of result.pages) for (const w of page.words) pagesOfStanza.set(w.stanzaIndex, (pagesOfStanza.get(w.stanzaIndex) ?? new Set()).add(page.index));
+    for (const pages of pagesOfStanza.values()) expect(pages.size).toBe(1);
+  });
+
+  it("(b) pages use the largest size that needs no more pages than the minimum size does", () => {
+    const poem = Array.from({ length: 40 }, (_, i) => "la la la" + (i % 4 === 3 && i < 39 ? "\n" : "")).join("\n");
+    const result = run(poem, "reel");
+    // Short lines at 44px: the page count is set by height, so the size can grow until the count would rise.
+    expect(result.fontSize).toBeGreaterThan(LAYOUT_CONFIG.minFontSize);
+  });
+
+  it("(c) a Whitman-length line still wraps, at the minimum size, with a hanging indent", () => {
+    const whitman = "For every atom belonging to me as good belongs to you.";
+    const result = run(whitman, "post");
+    const s = layoutStats(result);
+    expect(s).toMatchObject({ fontSize: LAYOUT_CONFIG.minFontSize, wrappedLines: 1 });
+    const xs = new Set(result.pages[0].words.flatMap((w) => w.pieces.map((p) => p.x)));
+    expect(Math.min(...xs)).toBeCloseTo(result.safeArea.x);
+    expect([...xs].some((x) => Math.abs(x - (result.safeArea.x + LAYOUT_CONFIG.hangingIndentEm * result.fontSize)) < 1e-6)).toBe(true);
+  });
+
+  it("(c) wraps only the lines that cannot fit; their neighbours stay on one row", () => {
+    const poem = ["short line", "For every atom belonging to me as good belongs to you.", "another short one"].join("\n");
+    const result = run(poem, "reel");
+    const rowsOfLine = (line: number) => new Set(result.pages[0].words.filter((w) => w.lineIndex === line).flatMap((w) => w.pieces.map((p) => p.y))).size;
+    expect(result.fontSize).toBe(LAYOUT_CONFIG.minFontSize);
+    expect([rowsOfLine(0), rowsOfLine(1), rowsOfLine(2)]).toEqual([1, 2, 1]);
+  });
+
+  it("layoutStats counts lines, pages and wrapped lines", () => {
+    expect(stats("a\nb\n\nc")).toEqual({ fontSize: LAYOUT_CONFIG.maxFontSize, pages: 1, lines: 3, wrappedLines: 0 });
   });
 });
