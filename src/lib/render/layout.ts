@@ -2,8 +2,8 @@
 // `measureText` is injected so tests (and the CLI) run without a browser; the app passes a canvas-backed one.
 import type { MoodPreset } from "@/lib/moods/types";
 import type { PublicProsody } from "@/lib/prosody";
-import { FOOTER_BYLINE_SIZE, FOOTER_TITLE_SIZE, fontString } from "./fonts";
-import type { FooterLine, FormatId, Layout, LayoutPage, MeasureText, Piece, PlacedWord, Rect, TitlePlacement } from "./types";
+import { FOOTER_BYLINE_SIZE, FOOTER_TITLE_SIZE, fontString, MARK_SIZE, MARK_TEXT } from "./fonts";
+import type { FooterLine, FormatId, Layout, MarkLine, LayoutPage, MeasureText, Piece, PlacedWord, Rect, TitlePlacement } from "./types";
 
 export const FORMATS: Record<FormatId, { width: number; height: number }> = {
   reel: { width: 1080, height: 1920 }, // 9:16
@@ -17,7 +17,7 @@ export const LAYOUT_CONFIG = {
    */
   margins: {
     reel: { top: 220, bottom: 340, side: 96 },
-    post: { top: 120, bottom: 120, side: 96 },
+    post: { top: 120, bottom: 156, side: 96 },
   },
   /** The default minimum; a mood can set its own (MoodPreset.minFontSize). ~44px on a 1080-wide poster is about 16pt on a phone screen: the smallest comfortable size. */
   minFontSize: 44,
@@ -31,9 +31,15 @@ export const LAYOUT_CONFIG = {
    * area (its own UI covers the bottom 340px), so the poem makes room for it. A Post has no such UI, so the
    * footer sits lower, in the bottom margin, and the poem keeps the whole safe area.
    */
-  footerReserve: { reel: 120, post: 0 },
+  footerReserve: { reel: 156, post: 0 },
   /** Where the last footer baseline sits: above the bottom of the safe area (Reel), or above the canvas edge (Post). */
-  footerBaselineInset: { reel: 12, post: 56 },
+  footerBaselineInset: { reel: 48, post: 84 },
+  /**
+   * The "made with Stanza" mark has a row of its own under the footer, right-aligned, so it can never touch the
+   * footer text. The row is reserved whether or not the mark is on, so the toggle never moves the poem.
+   * Baseline distance: above the bottom of the safe area (Reel), or above the canvas edge (Post).
+   */
+  markBaselineInset: { reel: 8, post: 44 },
   /** Distance between the title and byline baselines. */
   footerLineGap: 42,
   /** The footer shrinks to fit a long title, but never below this fraction of its size. */
@@ -518,6 +524,13 @@ function footerLines(
   return lines;
 }
 
+/** Where the "made with Stanza" mark goes: right-aligned (x is its RIGHT edge) on the row under the footer. */
+function markLine(mood: MoodPreset, format: FormatId, safe: Rect): MarkLine {
+  const baseline = format === "reel" ? safe.y + safe.height - LAYOUT_CONFIG.markBaselineInset.reel : FORMATS.post.height - LAYOUT_CONFIG.markBaselineInset.post;
+  const font = fontString({ family: mood.typography.display, weight: mood.footer.bylineWeight, italic: true, size: MARK_SIZE });
+  return { text: MARK_TEXT, x: safe.x + safe.width, y: baseline, font };
+}
+
 /**
  * @param emphasized ids of emphasised words. They are measured in the emphasis font, so they fit as drawn.
  * @param extras the user's title (above the poem, in the footer, or hidden) and an optional byline
@@ -571,6 +584,7 @@ export function layout(
     pages: layoutPages,
     pageOfLine,
     title: titleBlock,
+    mark: markLine(mood, format, safeArea),
     footer: footerLines({ title: placement === "footer" ? title : "", byline: extras.byline }, mood, format, safeArea, measure),
   };
 }

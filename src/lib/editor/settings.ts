@@ -31,6 +31,8 @@ export interface EditorSettings {
   lineColours: Record<number, string>;
   /** Colour of the emphasised words; null = the mood's own. */
   emphasisColour: string | null;
+  /** The small "made with Stanza" mark in the bottom corner. On by default. */
+  mark: boolean;
 }
 
 export const DEFAULT_DARKEN = 0.35;
@@ -50,6 +52,7 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   patternStrength: 50,
   lineColours: {},
   emphasisColour: null,
+  mark: true,
 };
 
 /** Length presets in ms; null is Auto. */
@@ -91,7 +94,7 @@ export function toSceneStyling(
 
 /**
  * Clears everything about the LOOK: mood, palette, background, photo, pattern, line colours, important words and
- * their colour. Title, byline, format, length and echoes are left alone: they are not styling.
+ * their colour. Title, byline, format, length, echoes and the mark are left alone: they are not styling.
  */
 export function resetStyling(settings: EditorSettings): EditorSettings {
   const { background, pattern, patternStrength, lineColours, emphasisColour, emphasis, mood, paletteVariant } = DEFAULT_SETTINGS;
@@ -164,6 +167,7 @@ export function toShareState(poem: string, settings: EditorSettings, analysis: A
     patternStrength: settings.patternStrength,
     lineColours: settings.lineColours,
     emphasisColour: settings.emphasisColour,
+    mark: settings.mark,
   };
 }
 
@@ -184,6 +188,7 @@ export function settingsFromShare(state: ShareState): EditorSettings {
     patternStrength: state.patternStrength,
     lineColours: state.lineColours,
     emphasisColour: state.emphasisColour,
+    mark: state.mark,
   };
 }
 

@@ -7,13 +7,14 @@
 // Version 2: + background (mood paper or a colour), pattern and its strength, line colours, emphasis colour.
 //   A photo background is NEVER in a link (the image stays in the browser). If the sender used one, the link opens
 //   on the mood's paper and says so. Version 1 links still open: they get the version 2 defaults.
+// Version 3: + the "made with Stanza" mark (on/off). Version 1 and 2 links migrate with the mark ON, the product default.
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from "lz-string";
 import { MOOD_IDS, type MoodId } from "@/lib/moods/ids";
 import { PATTERN_IDS, type PatternId } from "@/lib/render/patterns";
 import { isHexColour } from "@/lib/render/styling";
 import type { FormatId, TitlePlacement } from "@/lib/render/types";
 
-export const SHARE_VERSION = 2;
+export const SHARE_VERSION = 3;
 export const HASH_KEY = "p";
 
 /** The background as the link records it. `image` is only ever written, never read back (see above). */
@@ -41,6 +42,8 @@ export interface ShareState {
   lineColours: Record<number, string>;
   /** Colour of the emphasised words; null = the mood's own. */
   emphasisColour: string | null;
+  /** The small "made with Stanza" mark in the bottom corner. */
+  mark: boolean;
 }
 
 export type DecodeFailure = "empty" | "corrupt" | "version" | "invalid";
@@ -98,6 +101,8 @@ interface Wire {
   ps?: number;
   lc?: Record<string, string>;
   ec?: string | null;
+  /** the "made with Stanza" mark: 1 on, 0 off (version 3) */
+  mk?: 0 | 1;
 }
 
 export function encodeShare(state: ShareState): string {
@@ -121,6 +126,7 @@ export function encodeShare(state: ShareState): string {
     ps: Math.round(state.patternStrength),
     lc: Object.fromEntries(Object.entries(state.lineColours).map(([line, colour]) => [line, colour])),
     ec: state.emphasisColour,
+    mk: state.mark ? 1 : 0,
   };
   return compressToEncodedURIComponent(JSON.stringify(wire));
 }
@@ -129,8 +135,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 type Checked = { state: ShareState; notices: string[] } | { bad: string };
 
-/** Version 1 fields, shared by both versions. */
-function validateCore(raw: Record<string, unknown>): { core: Omit<ShareState, "background" | "pattern" | "patternStrength" | "lineColours" | "emphasisColour"> } | { bad: string } {
+/** Version 1 fields, shared by every version. */
+function validateCore(raw: Record<string, unknown>): { core: Omit<ShareState, "background" | "pattern" | "patternStrength" | "lineColours" | "emphasisColour" | "mark"> } | { bad: string } {
   const { p, t, tp, b, m, pv, f, l, e, em } = raw;
   if (typeof p !== "string" || p.trim() === "" || p.length > LIMITS.poem) return { bad: "poem" };
   if (typeof t !== "string" || t.length > LIMITS.title) return { bad: "title" };
@@ -193,13 +199,22 @@ function validateLook(raw: Record<string, unknown>): { look: Pick<ShareState, "b
   };
 }
 
+/** Version 3: the mark. Older links (and a minimal v3 link) get the default: on. */
+function validateMark(raw: Record<string, unknown>): { mark: boolean } | { bad: string } {
+  const { mk = 1 } = raw;
+  if (mk !== 0 && mk !== 1) return { bad: "mark" };
+  return { mark: mk === 1 };
+}
+
 function validate(raw: Record<string, unknown>, version: number): Checked {
   const core = validateCore(raw);
   if ("bad" in core) return core;
   // A version 1 link has none of the newer fields: ignore any that happen to be there and use the defaults.
   const look = validateLook(version >= 2 ? raw : {});
   if ("bad" in look) return look;
-  return { state: { ...core.core, ...look.look }, notices: look.notices };
+  const mark = validateMark(version >= 3 ? raw : {});
+  if ("bad" in mark) return mark;
+  return { state: { ...core.core, ...look.look, mark: mark.mark }, notices: look.notices };
 }
 
 const failure = (reason: DecodeFailure, message: string, poem?: string): DecodeResult => ({ ok: false, reason, message, poem });
@@ -229,7 +244,7 @@ export function decodeShare(payload: string | null | undefined): DecodeResult {
   if (!isRecord(raw)) return failure("corrupt", "That link looks damaged, so I couldn't open it.");
 
   const version = raw.v;
-  if (version !== 1 && version !== SHARE_VERSION) {
+  if (version !== 1 && version !== 2 && version !== SHARE_VERSION) {
     return failure(
       "version",
       "That link was made with a different version of Stanza, so the settings can't be restored.",

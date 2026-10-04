@@ -20,6 +20,7 @@ const full: ShareState = {
   patternStrength: 35,
   lineColours: { 0: "#C0392B", 1: "#2F5D8A", 39: "#4F7A5A" },
   emphasisColour: "#8B1A1A",
+  mark: false,
 };
 
 const wire = (patch: Record<string, unknown> = {}) =>
@@ -33,9 +34,9 @@ const ok = (payload: string) => {
 };
 
 describe("share links v2: round trip", () => {
-  it("writes version 2", () => {
-    expect(SHARE_VERSION).toBe(2);
-    expect(ok(encodeShare(full)).version).toBe(2);
+  it("writes the current version (3 since the mark arrived)", () => {
+    expect(SHARE_VERSION).toBe(3);
+    expect(ok(encodeShare(full)).version).toBe(3);
   });
 
   it("restores EVERY field exactly, including the new ones", () => {
@@ -160,10 +161,10 @@ describe("share links v1: migration", () => {
     }
   });
 
-  it("a migrated state encodes as version 2 and round-trips to the same state", () => {
+  it("a migrated state encodes as the current version and round-trips to the same state", () => {
     const migrated = ok(v1()).state;
     const again = ok(encodeShare(migrated));
-    expect(again.version).toBe(2);
+    expect(again.version).toBe(SHARE_VERSION);
     expect(again.state).toEqual(migrated);
   });
 
@@ -224,7 +225,7 @@ describe("share links v2: validation of the new fields", () => {
   });
 
   it("still calls any other version an unknown one, and recovers the poem", () => {
-    for (const v of [0, 3, 99, "2"]) {
+    for (const v of [0, 4, 99, "2"]) {
       expect(decodeShare(wire({ v }))).toMatchObject({ ok: false, reason: "version", poem: "keep me" });
     }
   });

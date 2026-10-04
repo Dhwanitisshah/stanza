@@ -17,10 +17,12 @@ import {
 } from "@/lib/editor/settings";
 import { getMoodPreset } from "@/lib/moods/presets";
 import { ImageProblem, loadImageAsset, type ImageAsset } from "@/lib/render/image";
+import { withMark } from "@/lib/render/scene";
 import { defaultEmphasisColour, resolvePalette } from "@/lib/render/styling";
 import { shareHash } from "@/lib/share/encode";
 import { BackgroundTab } from "./BackgroundTab";
 import { EditorTabs, type TabId } from "./EditorTabs";
+import { ExportDialog, type ExportKind } from "./ExportDialog";
 import { ExportBar } from "./ExportBar";
 import { Logo } from "./Logo";
 import { MoodTab } from "./MoodTab";
@@ -64,6 +66,7 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
   const [image, setImage] = useState<ImageAsset | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
+  const [exporting, setExporting] = useState<ExportKind | null>(null);
 
   const change = useCallback((patch: Partial<EditorSettings>) => setSettings((s) => ({ ...s, ...patch })), []);
 
@@ -180,6 +183,15 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
   const sceneState = useScene(input);
   const length = sceneState.status === "ready" ? sceneState.scene.length : null;
 
+  // The mark has its own reserved row, so switching it never changes the layout: it is applied to the finished scene,
+  // and the preview and every export see the same one.
+  const readyScene = sceneState.status === "ready" ? sceneState.scene : null;
+  const shownScene = useMemo(() => (readyScene ? withMark(readyScene, settings.mark) : null), [readyScene, settings.mark]);
+
+  // Export is offered only when the poster on screen is up to date: no rebuild under way, and no typing or colour drag still settling.
+  const settling = title !== settings.title || byline !== settings.byline || settledLook !== colourLook;
+  const canExport = shownScene !== null && sceneState.status === "ready" && !sceneState.refreshing && !settling;
+
   // The colours the poster really has now: what the line-colour and emphasis controls need to show and check against.
   const livePreset = getMoodPreset(effective?.mood ?? "Tender");
   const livePalette = useMemo(
@@ -220,6 +232,11 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
     const timer = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  const getShareUrl = useCallback(
+    () => (response ? shareHash(toShareState(response.poem, settings, response.analysis, response.prosody)) : ""),
+    [response, settings],
+  );
 
   async function copyLink() {
     if (!response) return;
@@ -270,7 +287,7 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
             </button>
           </div>
           <div className="hidden sm:block">
-            <button type="button" disabled className={BUTTON_PRIMARY} title="Export arrives in the next phase">
+            <button type="button" onClick={() => setExporting("reel")} disabled={!canExport} className={BUTTON_PRIMARY}>
               Export
             </button>
           </div>
@@ -303,8 +320,8 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
             {FORMAT_LABEL[format]}
             {shownMood ? ` · ${shownMood}` : ""}
           </p>
-          {sceneState.status === "ready" ? (
-            <PreviewPanel key={sceneState.key} scene={sceneState.scene} image={image} />
+          {sceneState.status === "ready" && shownScene ? (
+            <PreviewPanel key={sceneState.key} scene={shownScene} image={image} />
           ) : (
             <div className="flex min-h-[50vh] w-full items-center justify-center text-center text-sm text-muted" role="status">
               {sceneState.status === "error"
@@ -391,14 +408,28 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
             )}
           </div>
           <div className="hidden shrink-0 border-t border-rule p-5 lg:block">
-            <ExportBar layout="panel" format={format} onCopyLink={copyLink} canShare={response !== null} />
+            <ExportBar layout="panel" format={format} onCopyLink={copyLink} canShare={response !== null} onExport={setExporting} canExport={canExport} />
           </div>
         </aside>
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-rule bg-paper p-3 lg:hidden">
-        <ExportBar layout="bar" format={format} onCopyLink={copyLink} canShare={response !== null} />
+        <ExportBar layout="bar" format={format} onCopyLink={copyLink} canShare={response !== null} onExport={setExporting} canExport={canExport} />
       </div>
+
+      {exporting && shownScene && (
+        <ExportDialog
+          scene={shownScene}
+          image={image}
+          poem={response?.poem ?? poem}
+          moodLabel={shownScene.mood.id}
+          mark={settings.mark}
+          onMark={(on) => change({ mark: on })}
+          getShareUrl={getShareUrl}
+          initialKind={exporting}
+          onClose={() => setExporting(null)}
+        />
+      )}
 
       <p role="status" aria-live="polite" className={`fixed bottom-24 left-1/2 z-20 -translate-x-1/2 rounded-md bg-ink px-4 py-2 text-sm text-paper shadow-lg lg:bottom-6 ${toast ? "" : "hidden"}`}>
         {toast}

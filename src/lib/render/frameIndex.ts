@@ -6,7 +6,7 @@ import { luminance } from "@/lib/moods/contrast";
 import { cubicBezier } from "./easing";
 import { ENTRANCE_MS } from "./entrances";
 import { autoInk, resolvePalette } from "./styling";
-import type { FooterLine, Piece, Scene } from "./types";
+import type { FooterLine, MarkLine, Piece, Scene } from "./types";
 
 export interface WordSpan {
   pieces: Piece[];
@@ -69,6 +69,8 @@ export interface FrameIndex {
   titleStart: number;
   titleDuration: number;
   footer: FooterLine[];
+  /** The "made with Stanza" mark, or null when it is switched off. */
+  mark: MarkLine | null;
   footerStart: number;
   footerDuration: number;
   ease: (x: number) => number;
@@ -79,6 +81,9 @@ export const RESTORE_MS = 800;
 
 /** The footer is quiet: it never reaches full ink strength. */
 export const FOOTER_ALPHA = 0.62;
+
+/** The mark is quieter still, and constant: it is there from the first frame to the last. */
+export const MARK_ALPHA = 0.4;
 
 const echoWeight = (strength: "perfect" | "near" | "repeat") => (strength === "near" ? 0.5 : 1);
 
@@ -199,6 +204,7 @@ export function buildFrameIndex(scene: Scene): FrameIndex {
     titleStart,
     titleDuration,
     footer: layout.footer,
+    mark: scene.mark ? layout.mark : null,
     footerStart,
     footerDuration,
     ease: cubicBezier(mood.easing),

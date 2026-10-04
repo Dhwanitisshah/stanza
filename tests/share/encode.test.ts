@@ -20,6 +20,7 @@ const base: ShareState = {
   patternStrength: 65,
   lineColours: { 0: "#C0392B", 3: "#2F5D8A" },
   emphasisColour: "#E8B84A",
+  mark: false,
 };
 
 const roundTrip = (state: ShareState) => {

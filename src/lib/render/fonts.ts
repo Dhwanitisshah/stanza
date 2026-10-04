@@ -17,6 +17,10 @@ export const fontString = ({ family, weight, italic, size }: FontSpec): string =
 export const FOOTER_TITLE_SIZE = 24;
 export const FOOTER_BYLINE_SIZE = 28;
 
+/** The small "made with Stanza" mark in the bottom corner: its text and size. */
+export const MARK_TEXT = "made with Stanza";
+export const MARK_SIZE = 18;
+
 /** Every font the mood draws with: poem text, emphasis, and the footer's title and byline. Preloaded before measuring. */
 export function moodFontSpecs(mood: MoodPreset): FontSpec[] {
   const { typography, emphasis, footer } = mood;

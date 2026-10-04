@@ -27,10 +27,19 @@ export function findBrowser() {
 }
 
 const children = [];
+const appByPort = new Map();
 function killTree(child) {
   if (!child.pid) return;
   if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
   else child.kill("SIGKILL");
+}
+/** Stops one app server (started by startApp) and leaves the browser and any other servers running. */
+export function stopApp(port) {
+  const child = appByPort.get(port);
+  if (!child) return;
+  killTree(child);
+  appByPort.delete(port);
+  children.splice(children.indexOf(child), 1);
 }
 export function cleanup() {
   children.splice(0).forEach(killTree);
@@ -65,6 +74,7 @@ export async function startApp({ mode = "start", port, env = {} }) {
     stdio: "ignore",
   });
   children.push(child);
+  appByPort.set(port, child);
   await waitForHttp(`http://localhost:${port}/`, 60_000, "The Next.js server");
   return `http://localhost:${port}`;
 }
@@ -109,7 +119,11 @@ export async function openPage(
       pending.get(message.id)(message);
       pending.delete(message.id);
     } else if (message.method === "Runtime.consoleAPICalled") {
-      consoleLines.push({ type: message.params.type, text: message.params.args.map((a) => a.value ?? a.description).join(" ") });
+      consoleLines.push({
+        type: message.params.type,
+        text: message.params.args.map((a) => a.value ?? a.description ?? JSON.stringify(a.preview?.properties ?? a.type)).join(" "),
+        url: message.params.stackTrace?.callFrames?.[0]?.url,
+      });
     } else if (message.method === "Runtime.exceptionThrown") {
       consoleLines.push({ type: "exception", text: message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text });
     }

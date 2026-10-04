@@ -5,7 +5,7 @@ import lzString from "lz-string";
 import { createHash } from "node:crypto";
 
 const lib = await import("./lib/browser.mjs");
-const { cleanup, harness, launchBrowser, openPage, startApp } = lib;
+const { cleanup, harness, launchBrowser, openPage, startApp, stopApp } = lib;
 
 const LAMP = "The lamp burns low beside the door,\nthe kettle hums a quiet tune,\nthe rain has found the wooden floor,\nand somewhere far, a patient moon.";
 const results = [];
@@ -376,6 +376,90 @@ try {
   check("editing the poem waits for a pause before re-reading it", tooSoon === wordsBefore, `${wordsBefore} then ${tooSoon} after 0.3 s`);
   check("...then re-reads it by itself (26 -> 27 words, no button pressed)", settled === wordsBefore + 1, `${wordsBefore} -> ${settled}`);
 
+  // ---- Export dialog, the "made with Stanza" mark, and the mark in share links
+  await freshEditor();
+  await app.setFormat("post");
+  await page.waitFor(`document.querySelector("canvas")?.height === 1350`, "post canvas", 30000);
+  const exportButton = `[...document.querySelectorAll("header button")].find((b) => b.textContent.trim() === "Export")`;
+  const openExport = async () => {
+    await page.waitFor(`${exportButton}?.disabled === false`, "the Export button to be enabled", 30000);
+    await page.evaluate(`${exportButton}.click()`);
+    await page.waitFor(`!!document.querySelector("dialog[open]")`, "the export dialog", 10000);
+  };
+  const grab = (name) =>
+    page.evaluate(`(() => { const c = document.querySelector("canvas"); (window.__frames ??= {})[${JSON.stringify(name)}] = c.getContext("2d").getImageData(0, 0, c.width, c.height); })()`);
+  const diffBox = (a, b) =>
+    page.evaluate(`(() => {
+      const A = window.__frames[${JSON.stringify(a)}], B = window.__frames[${JSON.stringify(b)}];
+      let x1 = 1e9, y1 = 1e9, x2 = -1, y2 = -1, count = 0;
+      for (let y = 0; y < A.height; y++) for (let x = 0; x < A.width; x++) {
+        const i = (y * A.width + x) * 4;
+        if (A.data[i] !== B.data[i] || A.data[i + 1] !== B.data[i + 1] || A.data[i + 2] !== B.data[i + 2]) { count++; if (x < x1) x1 = x; if (x > x2) x2 = x; if (y < y1) y1 = y; if (y > y2) y2 = y; }
+      }
+      return { count, x1, y1, x2, y2, width: A.width, height: A.height };
+    })()`);
+  const markSwitch = `document.querySelector('dialog[open] button[role=switch]')`;
+
+  const totalForMark = Number(await app.totalMs());
+  await app.seek(totalForMark);
+  await sleep(250);
+  await grab("mark-on");
+  await openExport();
+  const dialogFacts = await page.evaluate(`(() => {
+    const d = document.querySelector("dialog[open]");
+    return { title: d.querySelector("#export-title")?.textContent, cards: [...d.querySelectorAll('[role=group][aria-label="What to export"] button')].map((b) => b.textContent.replace(/\\s+/g, " ").trim()), markOn: document.querySelector('dialog[open] button[role=switch]')?.getAttribute("aria-checked"), shareLink: d.querySelector('input[aria-label="Share link"]')?.value ?? "" };
+  })()`);
+  check('the export dialog opens with "Export" and the Reel and Poster cards', dialogFacts.title === "Export" && dialogFacts.cards.length === 2 && /Reel/.test(dialogFacts.cards[0]) && /Poster/.test(dialogFacts.cards[1]), JSON.stringify(dialogFacts.cards));
+  check("the cards state the export size (Post: 1080 × 1350)", dialogFacts.cards.every((c) => c.includes("1080 × 1350")));
+  check('the "made with Stanza" mark is ON by default', dialogFacts.markOn === "true");
+  check("the dialog shows the share link, with the poem inside it", /#p=/.test(dialogFacts.shareLink));
+  const dialogSmall = await smallTargets();
+  check("the export dialog: every control is at least 44px tall", dialogSmall.length === 0, dialogSmall.join("; "));
+  const noSupportYet = await page.evaluate(`!/chai/i.test(document.querySelector("dialog[open]").innerText)`);
+  check("no support link before an export", noSupportYet);
+
+  await page.evaluate(`${markSwitch}.click()`);
+  await sleep(500);
+  await app.seek(totalForMark);
+  await sleep(250);
+  await grab("mark-off");
+  const box = await diffBox("mark-on", "mark-off");
+  check("switching the mark off removes something from the poster", box.count > 0, `${box.count} pixels`);
+  check("only the mark changes: a few hundred pixels, nothing else", box.count > 0 && box.count < 6000, `${box.count} pixels`);
+  check("the mark sits in the bottom-right corner, inside the side margin (96 px), right-aligned", box.x2 >= box.width - 96 - 6 && box.x2 <= box.width - 96 + 1 && box.x1 > box.width / 2, `x ${box.x1}..${box.x2} of ${box.width}`);
+  check("the mark is on its own row near the bottom edge of the Post, clear of the very edge (>= 32 px)", box.y1 > box.height - 100 && box.y2 <= box.height - 32, `y ${box.y1}..${box.y2} of ${box.height}`);
+
+  const offMd5 = md5(await app.canvasPng());
+  await page.evaluate(`navigator.clipboard.writeText = async (u) => { window.__copied = u; }`);
+  await page.evaluate(`[...document.querySelectorAll("dialog[open] button")].find((b) => b.textContent.trim() === "Copy").click()`);
+  await page.waitFor(`!!window.__copied`, "the copied link");
+  const offLink = await page.evaluate(`window.__copied`);
+  await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await sleep(300);
+  check("Escape closes the export dialog", !(await page.evaluate(`!!document.querySelector("dialog[open]")`)));
+
+  await page.navigate("about:blank", "true");
+  await page.navigate(offLink);
+  await waitCanvas("poster from the link without the mark");
+  await sleep(800);
+  await app.seek(Number(await app.totalMs()));
+  await sleep(250);
+  check("a share link remembers the mark is OFF (identical pixels)", md5(await app.canvasPng()) === offMd5);
+  await openExport();
+  check("...and the switch in the dialog shows it off", (await page.evaluate(`document.querySelector('dialog[open] button[role=switch]').getAttribute("aria-checked")`)) === "false");
+  await page.evaluate(`document.querySelector('dialog[open] button[aria-label="Close"]').click()`);
+
+  const { compressToEncodedURIComponent: compressV2 } = lzString;
+  const v2 = compressV2(JSON.stringify({ v: 2, p: "hello there\nhello world", t: "", tp: "above", b: "", m: "Joyful", pv: 0, f: "reel", l: null, e: 1, em: [], bg: "m", pt: "none", ps: 50, lc: {}, ec: null }));
+  await page.navigate("about:blank", "true");
+  await page.navigate(`${url}/#p=${v2}`);
+  await waitCanvas("the v2 poster");
+  await sleep(700);
+  await openExport();
+  check("a version 2 link opens, with the mark ON (the product default)", (await page.evaluate(`document.querySelector('dialog[open] button[role=switch]').getAttribute("aria-checked")`)) === "true");
+  await page.evaluate(`document.querySelector('dialog[open] button[aria-label="Close"]').click()`);
+
   // ---- Touch targets on the new tabs
   await clickTab("Background");
   await sleep(300);
@@ -403,6 +487,74 @@ try {
   check("no console errors", consoleErrors.length === 0, JSON.stringify(consoleErrors.slice(0, 3)));
 
   page.close();
+
+  // ---- The support link and the share sheet.
+  // NEXT_PUBLIC_* is fixed when the app is built, so these use a dev server started with the variable set, then one with it empty.
+  const supportUrl = "https://example.com/chai";
+  const servers = [["set", { NEXT_PUBLIC_SUPPORT_URL: supportUrl }], ["unset", { NEXT_PUBLIC_SUPPORT_URL: "" }]];
+  const SHORT = "hello there\nhello world";
+
+  for (const [label, env] of servers) {
+    const base = await startApp({ mode: "dev", port: 3161, env }); // one at a time: two dev servers cannot share a project folder
+    const p = await openPage(9380, base, { width: 1440, height: 1000 });
+    const a = harness(p);
+    const phase = () => p.evaluate(`document.querySelector("dialog[open]")?.dataset.phase`);
+    const dialogText = () => p.evaluate(`document.querySelector("dialog[open]")?.innerText ?? ""`);
+    const click = (text) =>
+      p.evaluate(`(() => { const b = [...document.querySelectorAll("dialog[open] button")].find((x) => x.textContent.trim().startsWith(${JSON.stringify(text)}) && !x.disabled); if (!b) throw new Error("no enabled button " + ${JSON.stringify(text)}); b.click(); })()`);
+    const hasButton = (text) => p.evaluate(`[...document.querySelectorAll("dialog[open] button")].some((x) => x.textContent.trim().startsWith(${JSON.stringify(text)}) && !x.disabled)`);
+    const wantsLink = label === "set";
+
+    await a.perform(SHORT);
+    await p.waitFor(`!!document.querySelector("canvas")`, "the poster", 60000);
+    await a.settle(900);
+    // "set": pretend to be a phone with a share sheet. "unset": a desktop with none.
+    await p.evaluate(
+      wantsLink
+        ? `navigator.canShare = (d) => !!d?.files?.length; navigator.share = async (d) => { window.__shared = { name: d.files[0].name, type: d.files[0].type, size: d.files[0].size, title: d.title }; };`
+        : `Object.defineProperty(navigator, "canShare", { value: undefined, configurable: true }); Object.defineProperty(navigator, "share", { value: undefined, configurable: true });`,
+    );
+    await p.waitFor(`${exportButton}?.disabled === false`, "Export to be enabled", 60000);
+    await p.evaluate(`${exportButton}.click()`);
+    await p.waitFor(`document.querySelector("dialog[open]")?.dataset.method && document.querySelector("dialog[open]").dataset.method !== "probing"`, "the browser check", 20000);
+    check(`support link (${label}): not shown before the export starts`, !/chai/i.test(await dialogText()));
+
+    await click("Export reel");
+    await p.waitFor(`!!document.querySelector('[role=progressbar]')`, "the progress bar", 30000);
+    const during = await phase();
+    check(`support link (${label}): not shown while the export runs`, during === "working" && !/chai/i.test(await dialogText()), `phase: ${during}`);
+    await p.waitFor(`document.querySelector("dialog[open]")?.dataset.phase === "done" || document.querySelector("dialog[open]")?.dataset.phase === "error"`, "the reel", 180000);
+    check(`reel export finishes (${label} server)`, (await phase()) === "done");
+
+    const text = await dialogText();
+    const link = await p.evaluate(`(() => { const a = [...document.querySelectorAll("dialog[open] a")].find((x) => /chai/i.test(x.textContent)); return a && { href: a.href, target: a.target, rel: a.rel, height: a.getBoundingClientRect().height, text: a.textContent.trim() }; })()`);
+    check(`support link (${label}): ${wantsLink ? "shown once the reel is ready" : "hidden completely when the address is unset"}`, wantsLink ? !!link : !link && !/chai|buy me/i.test(text), JSON.stringify(link));
+    if (wantsLink && link) {
+      check('support link: the gentle wording ("Stanza is free. If it made something you love, buy me a chai ☕")', /Stanza is free\. If it made something you love,/.test(text) && /buy me a chai ☕/.test(link.text));
+      check("support link: goes to NEXT_PUBLIC_SUPPORT_URL, in a new tab, with noopener", link.href === supportUrl && link.target === "_blank" && /noopener/.test(link.rel) && /noreferrer/.test(link.rel), JSON.stringify(link));
+      check("support link: is a 44px touch target", link.height >= 43.5, `${link.height}px`);
+    }
+
+    // The share sheet (phones) or a plain download (desktop).
+    const primary = await p.evaluate(`document.querySelector("#export-primary").textContent.trim()`);
+    if (wantsLink) {
+      check('with a share sheet available the main button says "Share…" and a download stays one click away', primary === "Share…" && (await hasButton("Save to this device")), primary);
+      await click("Share…");
+      await p.waitFor(`!!window.__shared`, "the share sheet to be called", 10000);
+      const shared = await p.evaluate(`window.__shared`);
+      check("Share… hands the MP4 itself to the share sheet", /^stanza-[a-z0-9-]+\.mp4$/.test(shared.name) && shared.type === "video/mp4" && shared.size > 5000, JSON.stringify(shared));
+    } else {
+      check('without a share sheet the main button says "Download"', primary === "Download" && !(await hasButton("Save to this device")), primary);
+    }
+
+    // A poster export never shows the reel's support message.
+    await click("Poster");
+    await click("Download PNG");
+    await p.waitFor(`document.querySelector("dialog[open]")?.dataset.phase === "done"`, "the poster", 60000);
+    check(`support link (${label}): not shown for a poster export`, !/chai/i.test(await dialogText()));
+    p.close();
+    stopApp(3161);
+  }
 } catch (error) {
   console.error(error);
   code = 1;

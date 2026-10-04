@@ -5,7 +5,7 @@
 //
 // Soft ink (ink-bleed) and glow use shadowBlur, never ctx.filter: filter support on canvas is patchy (Safari).
 import { entranceState, INK_BLEED_BLUR_EM, newEntranceState, type EntranceState } from "./entrances";
-import { buildFrameIndex, FOOTER_ALPHA, RESTORE_MS, type FrameIndex, type WordSpan } from "./frameIndex";
+import { buildFrameIndex, FOOTER_ALPHA, MARK_ALPHA, RESTORE_MS, type FrameIndex, type WordSpan } from "./frameIndex";
 import type { Piece, Scene } from "./types";
 
 /** The slice of the 2D canvas API renderFrame uses. Real contexts and test recorders both satisfy it. */
@@ -176,9 +176,17 @@ function underline(ctx: FrameContext, index: FrameIndex, word: WordSpan, fontPx:
   }
 }
 
-export function renderFrame(ctx: FrameContext, scene: Scene, t: number, resources: FrameResources = {}): void {
+/** Optional view of a frame. Like everything else it is an input, so renderFrame stays a function of its arguments. */
+export interface FrameView {
+  /** Show only this page, fully (no page fade). Used for the poster of a page of a multi-page poem. */
+  page?: number;
+}
+
+export function renderFrame(ctx: FrameContext, scene: Scene, t: number, resources: FrameResources = {}, view: FrameView = {}): void {
   const index = resources.index ?? buildFrameIndex(scene);
+  const only = view.page;
   const time = clampTime(t, index.totalMs);
+  const showing = (page: number) => (only === undefined ? pageAlpha(index, page, time) : page === only ? 1 : 0);
 
   ctx.save();
   ctx.globalAlpha = 1;
@@ -204,7 +212,7 @@ export function renderFrame(ctx: FrameContext, scene: Scene, t: number, resource
 
   // The title above the poem fades in first, and leaves with page 0.
   if (index.title) {
-    const alpha = clamp01((time - index.titleStart) / index.titleDuration) * pageAlpha(index, 0, time);
+    const alpha = clamp01((time - index.titleStart) / index.titleDuration) * showing(0);
     if (alpha > 0) {
       ctx.font = index.title.font;
       ctx.globalAlpha = alpha;
@@ -217,7 +225,7 @@ export function renderFrame(ctx: FrameContext, scene: Scene, t: number, resource
   for (let w = 0; w < words.length; w++) {
     const word = words[w];
     if (time < word.appearStart) continue;
-    const onPage = pageAlpha(index, word.page, time);
+    const onPage = showing(word.page);
     if (onPage <= 0) continue;
 
     const progress = index.ease(clamp01((time - word.appearStart) / index.entranceMs));
@@ -264,5 +272,23 @@ export function renderFrame(ctx: FrameContext, scene: Scene, t: number, resource
       else ctx.fillText(line.text, line.x, line.y);
     }
   }
+
+  // "made with Stanza": tiny, constant, right-aligned on its own row under the footer.
+  if (index.mark) {
+    ctx.textAlign = "right";
+    ctx.font = index.mark.font;
+    ctx.globalAlpha = MARK_ALPHA;
+    ctx.fillStyle = index.ink;
+    ctx.fillText(index.mark.text, index.mark.x, index.mark.y);
+  }
   ctx.restore();
+}
+
+/**
+ * The finished poster of one page: every word in, nothing dimmed, the footer in. For the last page (and for a poem
+ * of one page) this is exactly the final frame of the video; for earlier pages it is the same picture of THAT page.
+ */
+export function renderPoster(ctx: FrameContext, scene: Scene, page: number, resources: FrameResources = {}): void {
+  const index = resources.index ?? buildFrameIndex(scene);
+  renderFrame(ctx, scene, index.totalMs, { ...resources, index }, { page: Math.max(0, Math.min(page, index.pageCount - 1)) });
 }

@@ -15,12 +15,14 @@
     "posters": "node scripts/posters.mjs",
     "ui-check": "node scripts/ui-check.mjs",
     "perf": "node scripts/perf.mjs",
-    "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1"
+    "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1",
+    "export-check": "node scripts/export-check.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",
     "cmu-pronouncing-dictionary": "^3.0.0",
     "lz-string": "^1.5.0",
+    "mediabunny": "^1.61.1",
     "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",

@@ -9,6 +9,7 @@ export interface DrawCall {
   alpha: number;
   fill: string;
   font: string;
+  textAlign: CanvasTextAlign;
   shadowBlur: number;
   shadowColor: string;
   shadowOffsetX: number;
@@ -53,6 +54,7 @@ export class RecordingContext {
       alpha: this.globalAlpha,
       fill: String(this.fillStyle),
       font: this.font,
+      textAlign: this.textAlign,
       shadowBlur: this.shadowBlur,
       shadowColor: this.shadowColor,
       shadowOffsetX: this.shadowOffsetX,
@@ -110,6 +112,7 @@ export function footerKeys(layout: Layout): Set<string> {
     if (line.glyphs) for (const g of line.glyphs) keys.add(`${g.text}|${g.x}`);
     else keys.add(`${line.text}|${line.x}`);
   }
+  keys.add(`${layout.mark.text}|${layout.mark.x}`); // the "made with Stanza" mark is not poem text either
   return keys;
 }
 

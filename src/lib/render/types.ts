@@ -56,6 +56,14 @@ export interface FooterLine {
   glyphs?: { text: string; x: number }[];
 }
 
+/** The "made with Stanza" mark. Unlike a FooterLine, x is its RIGHT edge: it is drawn right-aligned. */
+export interface MarkLine {
+  text: string;
+  x: number;
+  y: number; // baseline
+  font: string;
+}
+
 export interface LayoutPage {
   index: number;
   words: PlacedWord[];
@@ -79,6 +87,8 @@ export interface Layout {
   pageOfLine: number[];
   /** The title drawn above the poem on page 0 (only when the placement is "above"), already positioned. */
   title: FooterLine | null;
+  /** Where the "made with Stanza" mark would sit. Always present, because its row is reserved either way. */
+  mark: MarkLine;
   /** Title and byline in the bottom strip of the safe area (reserved on every page). Empty if neither is set. */
   footer: FooterLine[];
 }
@@ -161,6 +171,8 @@ export interface Scene {
   speed: number;
   /** false when the rhyme echoes are switched off. */
   echoes: boolean;
+  /** Draw the small "made with Stanza" mark in the bottom corner. */
+  mark: boolean;
   /** The user's background, pattern and colour choices (defaults when they made none). */
   styling: SceneStyling;
   /** How the length was reached (speed, extra hold) and the shortest readable duration. */

@@ -160,7 +160,7 @@ Automatic first (a real browser against the production build; it checks share li
 control, touch-target sizes and accessible names):
 ```powershell
 npm run build
-npm run ui-check      # expect: 58/58 checks passed
+npm run ui-check      # expect: 88/88 checks passed (58 from Phase 5, 30 from Phase 6)
 ```
 
 Then by hand, with `npm run dev` at http://localhost:3000:
@@ -251,12 +251,31 @@ Share links, version 2:
 
 ## Phase 6: Export
 
-- [ ] The PNG downloads as `stanza-<title>.png`. Right-click → Properties → Details should show **1080×1920** (Reel) or **1080×1350** (Post).
-- [ ] The video downloads, plays in VLC or the Windows Media Player, and its duration roughly equals the preview length.
-- [ ] The export matches the preview exactly, including the same timing and rhyme echoes.
-- [ ] A progress indicator shows during recording, and the UI doesn't freeze.
-- [ ] **Instagram check:** look at the file extension. Instagram does not accept `.webm`. If you got `.webm`, ask Claude Code to prefer MP4 in Chrome (`MediaRecorder.isTypeSupported('video/mp4')`) or to add a conversion note.
-- [ ] Test in Chrome **and** Edge, and Firefox if you can.
+Automated (run `npm run build` first; both use the production build in headless Edge/Chrome):
+
+```powershell
+npm run export-check  # expect: 36/36 checks passed. Exports the ABAB reel for real, parses the MP4 (avc1, 1080x1920,
+                      # duration within one frame, 30 fps, frame count, key frames), decodes frames back and compares them
+                      # with renderFrame (PSNR), checks PNG (lossless, identical to the final frame) and JPEG, cancel,
+                      # a multi-page poem, and the real-time fallback (?export=realtime). Prints encode time vs reel length.
+npm run ui-check      # expect: 88/88 (includes the export dialog, the mark, the support link, the share sheet)
+```
+
+By hand, on real files and real devices (these are the things the scripts cannot see):
+
+- [ ] **VLC:** the exported `stanza-<title>.mp4` opens, plays smoothly, and ends on the finished poster (title and byline in, nothing dimmed). Duration is within a frame of the preview length (Tools → Media Information).
+- [ ] **Windows Photos / Movies & TV:** the MP4 opens and plays there too (it is the player most people will use). The PNG and JPEG open in Photos at 1080×1920 (Reel) or 1080×1350 (Post); right-click → Properties → Details shows the size.
+- [ ] **The export matches the preview:** scrub the preview to a rhyme echo and compare it with the same moment in the video. Same colours, same type, same echo. (The check script proves this to ~37 dB PSNR; your eyes are the other half.)
+- [ ] **Instagram, from your phone:** send the MP4 to your phone (the share sheet, AirDrop-style, or cloud drive) and upload it as a **Reel**. Check that Instagram accepts a **silent** MP4. The file has no audio track at all. If Instagram refuses it or demands sound, add a silent AAC track in a later change. Also check the mark and footer are not covered by Instagram's own buttons (the Reel keeps them inside the safe area).
+- [ ] **Android share sheet:** open the deployed site in Chrome on an Android phone, export a reel; after "Your reel is ready" the main button says **Share…**. Tapping it opens the Android share sheet with the MP4 attached; choosing Instagram or WhatsApp receives a playable video. "Save to this device instead" saves it to Downloads.
+- [ ] **iPhone (Safari)** if you can: same Share… flow; AirDrop and Save to Photos work.
+- [ ] **Firefox (the fallback path):** in Firefox desktop the dialog should say it can't encode frame by frame (or can only record WebM) and warn that Instagram won't take WebM and that the tab must stay in front. Export once while keeping the tab in front: the file plays. Export again and switch tabs: the file is slower or stretched, as the warning says. To rehearse the fallback in Chrome or Edge, add `?export=realtime` to the address.
+- [ ] **Cancel:** press Cancel part-way through a reel. The dialog returns to its options, no file is downloaded, and a second export still works.
+- [ ] **Progress:** the bar moves, "Encoding N / M frames" counts up, and the page stays responsive (you can scroll the dialog; Cancel responds at once).
+- [ ] **"made with Stanza":** on by default; tiny and quiet in the bottom-right corner; never touches the byline; the switch in the export dialog removes it in the preview and in the export; a share link remembers the choice; an old (version 2) link opens with it on.
+- [ ] **Support link:** with `NEXT_PUBLIC_SUPPORT_URL` unset, nothing about chai appears anywhere. Set it to a real page in `.env.local` (or Vercel) and rebuild: the gentle line appears only in the "Your reel is ready" state, never before or during an export, and the link opens in a new tab.
+- [ ] **Multi-page poem:** the Poster card offers a page picker; the last page's PNG equals the final frame of the video.
+- [ ] A very long poem (the 40-line sample) exports without freezing the tab; note the encode time against the reel length.
 
 ---
 
