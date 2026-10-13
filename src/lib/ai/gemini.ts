@@ -4,7 +4,7 @@ import { MOOD_IDS } from "@/lib/moods/ids";
 import type { PublicProsody } from "@/lib/prosody";
 
 export const GEMINI_TIMEOUT_MS = 8000;
-const DEFAULT_MODEL = "gemini-flash-latest";
+const DEFAULT_MODEL = "gemini-flash-lite-latest";
 
 export type AiFailureReason = "timeout" | "model_not_found" | "api_error" | "invalid_json" | "empty_response";
 

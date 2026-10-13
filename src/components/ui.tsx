@@ -95,7 +95,7 @@ export function Switch({ label, checked, onChange, hint }: { label: string; chec
 export function ReadWithAiSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
   return (
     <Switch
-      label="Read with AI"
+      label="Read with AI (Google Gemini)"
       checked={checked}
       onChange={onChange}
       hint={

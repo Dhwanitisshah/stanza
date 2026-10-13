@@ -49,7 +49,7 @@ export default function PrivacyPage() {
           Stanza can ask Google&apos;s Gemini to read the mood of your poem. That happens <strong>only when &ldquo;Read with AI&rdquo; is on</strong>. It is on by default, and you can switch it off on the first page and again in the editor, next to your poem.
         </p>
         <p>
-          When it is on, the words of your poem are sent from Stanza&apos;s server to Google&apos;s Gemini API. Gemini answers with a mood, a palette suggestion, a one-sentence reading and a few words to emphasise. It never writes, changes or adds a word of your poem. Google handles what it receives under its own terms for the Gemini API; depending on the plan Stanza&apos;s key is on, Google may keep requests for a limited time and, on a free plan, may use them to improve its products.
+          When it is on, the words of your poem are sent from Stanza&apos;s server to Google&apos;s Gemini API. Gemini answers with a mood, a palette suggestion, a one-sentence reading and a few words to emphasise. It never writes, changes or adds a word of your poem. Google handles what it receives under its own terms for the Gemini API. <strong>Stanza uses Gemini&apos;s free tier, where Google may use submitted text to improve its products. Turn off Read with AI to keep your poem away from Google.</strong>
         </p>
         <p>
           When it is off, the poem is <strong>never sent to Google</strong>. Stanza&apos;s built-in reader picks the mood instead. It is plainer, but the poster works the same.

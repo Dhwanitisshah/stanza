@@ -471,7 +471,7 @@ try {
   check("Text tab: every control (chips, colour fields, links) is at least 44px tall", textSmall.length === 0, textSmall.join("; "));
 
   // ======== Phase 7a: Read with AI, privacy, headers, metadata ========
-  const readSwitch = `document.querySelector('button[role=switch][aria-label="Read with AI"]')`;
+  const readSwitch = `document.querySelector('button[role=switch][aria-label="Read with AI (Google Gemini)"]')`;
   const switchOn = () => page.evaluate(`${readSwitch}?.getAttribute("aria-checked")`);
   const recordRequests = () =>
     page.evaluate(`(() => { window.__aiBodies = []; const real = window.fetch; window.fetch = (u, o) => { if (String(u).includes("/api/analyze")) window.__aiBodies.push(JSON.parse(o.body)); return real(u, o); }; })()`);
