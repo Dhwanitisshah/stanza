@@ -12,9 +12,14 @@
 //   6. exports the PNG (must be 1080 x 1920 and IDENTICAL to the final frame, since PNG is lossless) and the JPEG;
 //   7. reports how long encoding took against the length of the reel.
 //
+// The app page runs under its real Content-Security-Policy (no relaxing, no bypass), and the check fails if the page
+// reports a single violation. That policy forbids what this script needs for ANALYSIS (loading Mediabunny and files from
+// another origin), so the analysis happens in a second, plain page (an "analysis page") that is handed the preview's
+// pixels as lossless PNG files. The app page only ever does what a visitor's browser does.
+//
 // Why PSNR 30 dB: see PSNR_FLOOR below. Exit code 1 if any check fails.
 import { createServer } from "node:http";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,11 +107,27 @@ async function waitForDownload(pattern, timeoutMs = 30_000) {
 
 const frame = (n) => `${n} frame${n === 1 ? "" : "s"}`;
 
+/**
+ * Runs `work` in a throwaway page with no Content-Security-Policy (our own file server), then closes it and brings the
+ * app's tab back to the front. A background tab gets no animation frames, and the real-time recorder needs them.
+ */
+async function withAnalysisPage(appPage, work) {
+  const analysis = await openPage(DEBUG_PORT, `http://localhost:${FILE_PORT}/blank.html`, { ready: 'document.readyState === "complete"' });
+  try {
+    return await work(analysis);
+  } finally {
+    analysis.close();
+    await appPage.send("Page.bringToFront");
+  }
+}
+
 let code = 0;
 try {
   const { frameTimes } = await loadFrameTimes();
   const fixtures = await loadFixtures();
   await new Promise((resolve) => fileServer.listen(FILE_PORT, resolve));
+  writeFileSync(join(downloads, "blank.html"), "<!doctype html><meta charset=utf-8><title>analysis</title>");
+  served.set("/blank.html", { file: join(downloads, "blank.html"), type: "text/html" });
   served.set("/mediabunny.mjs", { file: join(root, "node_modules", "mediabunny", "dist", "bundles", "mediabunny.min.mjs"), type: "text/javascript" });
 
   const url = await startApp({ port: APP_PORT });
@@ -126,6 +147,15 @@ try {
   const totalMs = await app.totalMs();
   const info = await app.canvasInfo();
   console.log(`poem: ABAB, ${info.mood}, ${info.width} x ${info.height}, ${(totalMs / 1000).toFixed(1)} s\n`);
+
+  /** Seeks the preview to `t` and serves what it draws as /<name> (lossless PNG) for the analysis page. */
+  async function serveReference(name, t) {
+    await app.seek(t);
+    await app.settle(300);
+    const file = join(downloads, name);
+    writeFileSync(file, await app.canvasPng());
+    served.set(`/${name}`, { file, type: "image/png" });
+  }
 
   const exportEnabled = `[...document.querySelectorAll("header button")].some((b) => b.textContent.trim() === "Export" && !b.disabled)`;
   const dialogState = (prop) => `document.querySelector("dialog[open]")?.dataset.${prop}`;
@@ -223,34 +253,35 @@ try {
   // ---------------- 5. decode frames and compare with the preview
   const picks = [Math.floor(expected.length * 0.3), Math.floor(expected.length * 0.6), expected.length - 1];
   const times = picks.map((i) => expected[i]);
-  const decode = await page.evaluate(`(async () => {
+  for (let k = 0; k < times.length; k++) await serveReference(`ref-${k}.png`, times[k]);
+  const decode = await withAnalysisPage(page, (analysis) =>
+    analysis.evaluate(`(async () => {
     const compare = ${comparePixels.toString()};
-    const params = ${JSON.stringify({ videoUrl: `http://localhost:${FILE_PORT}/video.mp4`, libUrl: `http://localhost:${FILE_PORT}/mediabunny.mjs`, picks, times, width: W, height: H, fps: FPS })};
+    const params = ${JSON.stringify({ origin: `http://localhost:${FILE_PORT}`, picks, times, width: W, height: H, fps: FPS })};
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const canvas = document.querySelector("canvas");
-    const ctx = canvas.getContext("2d");
+    const scratch = document.createElement("canvas");
+    scratch.width = params.width;
+    scratch.height = params.height;
+    const sctx = scratch.getContext("2d");
 
-    // What the preview (renderFrame) draws at each chosen time.
+    // What the preview (renderFrame) drew at each chosen time, read back from the lossless PNGs.
     const refs = [];
-    for (const t of params.times) {
-      canvas.dispatchEvent(new CustomEvent("stanza:seek", { detail: t }));
-      await sleep(300);
-      refs.push(ctx.getImageData(0, 0, params.width, params.height).data.slice());
+    for (let k = 0; k < params.times.length; k++) {
+      const bitmap = await createImageBitmap(await (await fetch(params.origin + "/ref-" + k + ".png")).blob());
+      sctx.clearRect(0, 0, params.width, params.height);
+      sctx.drawImage(bitmap, 0, 0);
+      refs.push(sctx.getImageData(0, 0, params.width, params.height).data.slice());
     }
 
     // Decode the whole video with VideoDecoder and keep the chosen frames.
-    const mb = await import(params.libUrl);
-    const blob = await (await fetch(params.videoUrl)).blob();
+    const mb = await import(params.origin + "/mediabunny.mjs");
+    const blob = await (await fetch(params.origin + "/video.mp4")).blob();
     const input = new mb.Input({ source: new mb.BlobSource(blob), formats: mb.ALL_FORMATS });
     const track = await input.getPrimaryVideoTrack();
     const config = await track.getDecoderConfig();
     const supported = await VideoDecoder.isConfigSupported(config);
     if (!supported.supported) return { error: "VideoDecoder does not support " + config.codec };
 
-    const scratch = document.createElement("canvas");
-    scratch.width = params.width;
-    scratch.height = params.height;
-    const sctx = scratch.getContext("2d");
     const decoded = new Array(params.picks.length).fill(null);
     let outputs = 0;
     let failure = null;
@@ -284,7 +315,8 @@ try {
       return { index, t: params.times[k], psnr: own.psnr, mad: own.mad, bestOtherPsnr: Math.max(...others.map((o) => o.psnr)) };
     });
     return { outputs, rows };
-  })()`);
+  })()`),
+  );
 
   if (decode.error) check("VideoDecoder decodes the exported video", false, decode.error);
   else {
@@ -320,27 +352,31 @@ try {
   check("the PNG is a PNG", png.subarray(1, 4).toString("latin1") === "PNG");
   check(`the PNG is ${W} x ${H}`, png.readUInt32BE(16) === W && png.readUInt32BE(20) === H, `${png.readUInt32BE(16)} x ${png.readUInt32BE(20)}`);
 
-  const stillCheck = await page.evaluate(`(async () => {
+  await serveReference("ref-final.png", totalMs);
+  const stillCheck = await withAnalysisPage(page, (analysis) =>
+    analysis.evaluate(`(async () => {
     const compare = ${comparePixels.toString()};
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const canvas = document.querySelector("canvas");
-    canvas.dispatchEvent(new CustomEvent("stanza:seek", { detail: ${totalMs} }));
-    await sleep(300);
-    const ref = canvas.getContext("2d").getImageData(0, 0, ${W}, ${H}).data.slice();
+    const origin = "http://localhost:${FILE_PORT}";
     const scratch = document.createElement("canvas");
     scratch.width = ${W};
     scratch.height = ${H};
     const sctx = scratch.getContext("2d");
-    const out = {};
-    for (const [key, path] of [["png", "poster.png"], ["jpg", "poster.jpg"]]) {
-      const blob = await (await fetch("http://localhost:${FILE_PORT}/" + path)).blob();
+    const read = async (path) => {
+      const blob = await (await fetch(origin + "/" + path)).blob();
       const bitmap = await createImageBitmap(blob);
       sctx.clearRect(0, 0, ${W}, ${H});
       sctx.drawImage(bitmap, 0, 0);
-      out[key] = { width: bitmap.width, height: bitmap.height, bytes: blob.size, ...compare(sctx.getImageData(0, 0, ${W}, ${H}).data, ref) };
+      return { blob, bitmap, data: sctx.getImageData(0, 0, ${W}, ${H}).data.slice() };
+    };
+    const ref = (await read("ref-final.png")).data;
+    const out = {};
+    for (const [key, path] of [["png", "poster.png"], ["jpg", "poster.jpg"]]) {
+      const got = await read(path);
+      out[key] = { width: got.bitmap.width, height: got.bitmap.height, bytes: got.blob.size, ...compare(got.data, ref) };
     }
     return out;
-  })()`);
+  })()`),
+  );
   check("the PNG is identical to the final frame of the preview (lossless)", stillCheck.png.mse === 0, `PSNR ${stillCheck.png.psnr.toFixed(1)} dB`);
   check(`the JPEG is ${W} x ${H} and close to the final frame (PSNR >= 35 dB at quality 0.92)`, stillCheck.jpg.width === W && stillCheck.jpg.height === H && stillCheck.jpg.psnr >= 35, `${stillCheck.jpg.width} x ${stillCheck.jpg.height}, ${stillCheck.jpg.psnr.toFixed(1)} dB`);
   console.log(`      PNG ${(stillCheck.png.bytes / 1e6).toFixed(2)} MB, JPEG ${(stillCheck.jpg.bytes / 1e6).toFixed(2)} MB\n`);
@@ -382,27 +418,27 @@ try {
   await exportPage(0, "page-first.png");
   await exportPage(pageCount - 1, "page-last.png");
   const multiTotal = await app.totalMs();
-  const pages = await page.evaluate(`(async () => {
+  await serveReference("ref-multi-final.png", multiTotal);
+  const pages = await withAnalysisPage(page, (analysis) =>
+    analysis.evaluate(`(async () => {
     const compare = ${comparePixels.toString()};
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const canvas = document.querySelector("canvas");
-    canvas.dispatchEvent(new CustomEvent("stanza:seek", { detail: ${multiTotal} }));
-    await sleep(300);
-    const final = canvas.getContext("2d").getImageData(0, 0, ${W}, ${H}).data.slice();
+    const origin = "http://localhost:${FILE_PORT}";
     const scratch = document.createElement("canvas");
     scratch.width = ${W};
     scratch.height = ${H};
     const sctx = scratch.getContext("2d");
     const read = async (name) => {
-      const bitmap = await createImageBitmap(await (await fetch("http://localhost:${FILE_PORT}/" + name)).blob());
+      const bitmap = await createImageBitmap(await (await fetch(origin + "/" + name)).blob());
       sctx.clearRect(0, 0, ${W}, ${H});
       sctx.drawImage(bitmap, 0, 0);
       return sctx.getImageData(0, 0, ${W}, ${H}).data.slice();
     };
+    const final = await read("ref-multi-final.png");
     const first = await read("page-first.png");
     const last = await read("page-last.png");
     return { lastVsFinal: compare(last, final).mse, firstVsFinal: compare(first, final).psnr };
-  })()`);
+  })()`),
+  );
   check("the last page's poster is exactly the final frame of the preview", pages.lastVsFinal === 0);
   check("the first page's poster is a different picture", pages.firstVsFinal < 40, `PSNR against the final frame ${pages.firstVsFinal.toFixed(1)} dB`);
 
@@ -442,6 +478,7 @@ try {
   console.log(`dialog: ${resultLine.trim()}\n`);
   // The check itself loads a second copy of Mediabunny into the page to decode; Mediabunny warns about that. Nothing else is excused.
   const problems = page.consoleLines.filter((line) => (line.type === "exception" || line.type === "error") && !line.url?.endsWith("/mediabunny.mjs"));
+  check("ZERO Content-Security-Policy violations while exporting (reel, PNG, JPEG, multi-page, real-time fallback)", page.cspViolations.length === 0, JSON.stringify(page.cspViolations.slice(0, 3)));
   check("the page logged no errors or exceptions", problems.length === 0, problems.map((p) => `${p.type}: ${p.text.slice(0, 500)} @ ${p.url ?? "?"}`).join(" | "));
   page.close();
 } catch (error) {

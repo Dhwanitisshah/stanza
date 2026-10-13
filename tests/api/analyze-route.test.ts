@@ -254,8 +254,11 @@ describe("request validation", () => {
     await expectError(await post({ poem: "hi", skipAi: "yes" }), "invalid_request");
   });
 
-  it("rejects a huge body before parsing it", async () => {
-    await expectError(await post({ poem: "a".repeat(30_000) }), "poem_too_long");
+  it("rejects a huge body before parsing it (413; the details are in analyze-guards.test.ts)", async () => {
+    const res = await post({ poem: "a".repeat(30_000) });
+    expect(res.status).toBe(413);
+    expect((await res.json()).error.code).toBe("payload_too_large");
+    expect(generateContent).not.toHaveBeenCalled();
   });
 });
 

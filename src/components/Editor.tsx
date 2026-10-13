@@ -81,7 +81,7 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
   // The first reading. Share links skip the AI: the saved settings already say how the poster looks.
   useEffect(() => {
     let cancelled = false;
-    analyzePoem(session.poem, { skipAi: session.fromLink })
+    analyzePoem(session.poem, { skipAi: session.fromLink || !session.settings.readWithAi })
       .then((next) => !cancelled && applyResult(next, session.poem, false))
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -101,7 +101,7 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
     }
     setBusy(true);
     setError(null);
-    analyzePoem(poem)
+    analyzePoem(poem, { skipAi: !settings.readWithAi })
       .then((next) => applyResult(next, poem, true))
       .catch((e: unknown) => {
         setBusy(false);
@@ -264,6 +264,8 @@ export function Editor({ session, onExit }: { session: Session; onExit: (goToHow
       stats={response ? ({ source: response.source, seconds: response.latencyMs / 1000 } satisfies ReadStats) : null}
       edited={edited}
       onRead={readAgain}
+      readWithAi={settings.readWithAi}
+      onReadWithAi={(on) => change({ readWithAi: on })}
     />
   );
 

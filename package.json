@@ -2,6 +2,9 @@
   "name": "stanza",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -14,12 +17,15 @@
     "layout-stats": "node scripts/layout-stats.mjs",
     "posters": "node scripts/posters.mjs",
     "ui-check": "node scripts/ui-check.mjs",
+    "brand": "node scripts/brand.mjs",
+    "export-time": "node scripts/export-time.mjs",
     "perf": "node scripts/perf.mjs",
-    "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1",
+    "verify": "node scripts/verify.mjs",
     "export-check": "node scripts/export-check.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.29.1",
+    "@vercel/analytics": "^2.0.1",
     "cmu-pronouncing-dictionary": "^3.0.0",
     "lz-string": "^1.5.0",
     "mediabunny": "^1.61.4",

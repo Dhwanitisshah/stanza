@@ -113,11 +113,24 @@ export async function openPage(
   let nextId = 0;
   const pending = new Map();
   const consoleLines = [];
+  /**
+   * Every Content-Security-Policy violation the page reports, across navigations. Two sources, so none is missed:
+   * the page's own "securitypolicyviolation" event (reported through a binding) and the browser's log entries
+   * (which also cover whatever happened before the listener existed). A healthy run leaves this empty.
+   */
+  const cspViolations = [];
   ws.onmessage = (event) => {
     const message = JSON.parse(event.data);
     if (message.id && pending.has(message.id)) {
       pending.get(message.id)(message);
       pending.delete(message.id);
+    } else if (message.method === "Runtime.bindingCalled" && message.params.name === "__reportCsp") {
+      cspViolations.push({ via: "event", ...JSON.parse(message.params.payload) });
+    } else if (message.method === "Log.entryAdded") {
+      const { level, text, url: entryUrl } = message.params.entry;
+      // Only real CSP messages ("...violates the following Content Security Policy directive..."): other "security" log entries,
+      // such as a nosniff MIME refusal for a script that does not exist locally, are a different thing.
+      if (/Content Security Policy/i.test(text)) cspViolations.push({ via: "log", level, text: text.slice(0, 220), url: entryUrl });
     } else if (message.method === "Runtime.consoleAPICalled") {
       consoleLines.push({
         type: message.params.type,
@@ -152,6 +165,11 @@ export async function openPage(
 
   await send("Runtime.enable");
   await send("Page.enable");
+  await send("Log.enable");
+  await send("Runtime.addBinding", { name: "__reportCsp" });
+  await send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `document.addEventListener("securitypolicyviolation", (e) => window.__reportCsp(JSON.stringify({ directive: e.violatedDirective, blocked: e.blockedURI, source: e.sourceFile, line: e.lineNumber, sample: e.sample })), true);`,
+  });
   await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
   await waitFor(ready, "the page to load");
 
@@ -168,7 +186,7 @@ export async function openPage(
     await waitFor(isReady, "the page to load");
   };
 
-  return { send, evaluate, waitFor, consoleLines, screenshot, navigate, close: () => ws.close() };
+  return { send, evaluate, waitFor, consoleLines, cspViolations, screenshot, navigate, close: () => ws.close() };
 }
 
 /** Helpers that operate the real app (landing page, then the editor) the way a person would. */

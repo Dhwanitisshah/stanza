@@ -33,6 +33,8 @@ export interface EditorSettings {
   emphasisColour: string | null;
   /** The small "made with Stanza" mark in the bottom corner. On by default. */
   mark: boolean;
+  /** "Read with AI": may the poem be sent to Gemini? Off means it never is. On by default. */
+  readWithAi: boolean;
 }
 
 export const DEFAULT_DARKEN = 0.35;
@@ -53,6 +55,7 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   lineColours: {},
   emphasisColour: null,
   mark: true,
+  readWithAi: true,
 };
 
 /** Length presets in ms; null is Auto. */
@@ -94,7 +97,7 @@ export function toSceneStyling(
 
 /**
  * Clears everything about the LOOK: mood, palette, background, photo, pattern, line colours, important words and
- * their colour. Title, byline, format, length, echoes and the mark are left alone: they are not styling.
+ * their colour. Title, byline, format, length, echoes, the mark and "Read with AI" are left alone: they are not styling.
  */
 export function resetStyling(settings: EditorSettings): EditorSettings {
   const { background, pattern, patternStrength, lineColours, emphasisColour, emphasis, mood, paletteVariant } = DEFAULT_SETTINGS;
@@ -168,6 +171,7 @@ export function toShareState(poem: string, settings: EditorSettings, analysis: A
     lineColours: settings.lineColours,
     emphasisColour: settings.emphasisColour,
     mark: settings.mark,
+    readWithAi: settings.readWithAi,
   };
 }
 
@@ -189,6 +193,7 @@ export function settingsFromShare(state: ShareState): EditorSettings {
     lineColours: state.lineColours,
     emphasisColour: state.emphasisColour,
     mark: state.mark,
+    readWithAi: state.readWithAi,
   };
 }
 

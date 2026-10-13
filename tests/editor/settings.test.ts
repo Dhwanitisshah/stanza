@@ -23,6 +23,7 @@ const custom: EditorSettings = {
   lineColours: { 1: "#C0392B", 3: "#2F5D8A" },
   emphasisColour: "#E8B84A",
   mark: false,
+  readWithAi: false,
 };
 
 describe("effectiveAnalysis", () => {

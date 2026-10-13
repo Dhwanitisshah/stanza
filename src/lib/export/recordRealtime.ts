@@ -49,24 +49,25 @@ export function recordRealtime({ canvas, fps, totalMs, type, draw, signal, onPro
       else if (failed) reject(failed);
       else resolve(new Blob(chunks, { type: type.container === "mp4" ? "video/mp4" : "video/webm" }));
     };
-    recorder.onstart = () => {
-      const startedAt = performance.now();
-      const tick = () => {
-        if (signal?.aborted) {
-          cancelled = true;
-          stop();
-          return;
-        }
-        const elapsed = performance.now() - startedAt;
-        draw(Math.min(elapsed, totalMs));
-        onProgress?.(Math.min(elapsed, totalMs), totalMs);
-        if (elapsed >= totalMs + TAIL_MS) stop();
-        else frame = requestAnimationFrame(tick);
-      };
-      frame = requestAnimationFrame(tick);
+    // The drawing loop must NOT wait for recorder.onstart. A canvas stream only produces a frame when the canvas
+    // changes, and current Chrome and Edge do not fire "start" until the first frame has arrived. Waiting for "start"
+    // before drawing therefore waits forever: nothing is drawn, so no frame comes, so "start" never fires.
+    const startedAt = performance.now();
+    const tick = () => {
+      if (signal?.aborted) {
+        cancelled = true;
+        stop();
+        return;
+      }
+      const elapsed = performance.now() - startedAt;
+      draw(Math.min(elapsed, totalMs));
+      onProgress?.(Math.min(elapsed, totalMs), totalMs);
+      if (elapsed >= totalMs + TAIL_MS) stop();
+      else frame = requestAnimationFrame(tick);
     };
 
     draw(0); // something on the canvas before the first captured frame
     recorder.start(500);
+    frame = requestAnimationFrame(tick);
   });
 }

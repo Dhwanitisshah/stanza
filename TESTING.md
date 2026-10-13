@@ -8,7 +8,7 @@ All commands are **PowerShell** and are run from `C:\dev\stanza`.
 ## Always: the baseline gate (run before every commit)
 
 ```powershell
-npm run verify        # typecheck → lint → test → build, must print PASS for all 4
+npm run verify        # typecheck → lint → test → build, must print PASS for all 4 (plain Node: same on Windows, macOS, Linux and CI)
 git status            # should be clean after commit
 git log --oneline -5  # each phase has its own commit
 ```
@@ -276,6 +276,23 @@ By hand, on real files and real devices (these are the things the scripts cannot
 - [ ] **Support link:** with `NEXT_PUBLIC_SUPPORT_URL` unset, nothing about chai appears anywhere. Set it to a real page in `.env.local` (or Vercel) and rebuild: the gentle line appears only in the "Your reel is ready" state, never before or during an export, and the link opens in a new tab.
 - [ ] **Multi-page poem:** the Poster card offers a page picker; the last page's PNG equals the final frame of the video.
 - [ ] A very long poem (the 40-line sample) exports without freezing the tab; note the encode time against the reel length.
+
+---
+
+## Phase 7a: Hardening (do these on the live URL; the scripts already prove the same things locally)
+
+`npm run ui-check` (135 checks) and `npm run export-check` (37) cover the headers, the CSP, the pages and the toggle against the production build. These are the parts only a person can check:
+
+- [ ] **Headers on the live site:** `curl.exe -sI https://<your-url>/` shows `content-security-policy` (with a `nonce-`), `x-content-type-options: nosniff`, `referrer-policy`, `permissions-policy`. Paste the URL into https://securityheaders.com for a second opinion.
+- [ ] **No CSP errors in a real browser:** open the live site, DevTools → Console, paste a poem, change mood, export a reel and a PNG. There must be no "Refused to ..." lines.
+- [ ] **Read with AI off, for real:** DevTools → Network, switch "Read with AI" off, press Perform it. The `/api/analyze` request payload must contain `"skipAi":true`. Vercel → Logs shows the call without a Gemini request.
+- [ ] **The kill switch:** set `AI_ENABLED=false` in Vercel, redeploy, paste a poem with "Read with AI" on. The reading must say it used Stanza's built-in reader, and the poster must still appear.
+- [ ] **/privacy** reads correctly on a phone, and the toggle's "What happens to my poem?" link opens it in a new tab.
+- [ ] **A made-up address** (`/nope`) shows the styled 404 with a working "Start again".
+- [ ] **Link preview:** paste the live URL into WhatsApp or Slack (or https://www.opengraph.xyz). It shows the lamp-poem card, never a poem from a share link. Paste a *share link* too: the card must be the same generic one.
+- [ ] **Install icon:** on your phone, "Add to Home Screen" shows the black "S" tile, and the browser tab shows the favicon.
+- [ ] **CI:** the badge at the top of the README is green, and a pull request shows the "verify" check.
+- [ ] **Analytics (only if you turn it on):** `NEXT_PUBLIC_ANALYTICS=true` + Web Analytics enabled in the Vercel project, redeploy. Vercel → Analytics shows page views, and the URLs in it have no `#p=...`.
 
 ---
 

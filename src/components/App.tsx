@@ -40,9 +40,9 @@ export function App() {
   const fromLink = useMemo(() => (payload && payload !== handledLink ? openLink(payload, 0) : null), [payload, handledLink]);
   const active = session ?? fromLink?.session ?? null;
 
-  function perform(poem: string, title: string) {
+  function perform(poem: string, title: string, readWithAi: boolean) {
     setHandledLink(payload);
-    setSession({ id: nextId, poem, settings: newSettings({ title }), fromLink: false });
+    setSession({ id: nextId, poem, settings: newSettings({ title, readWithAi }), fromLink: false });
     setNextId((n) => n + 1);
   }
 

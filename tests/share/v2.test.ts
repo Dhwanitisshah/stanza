@@ -21,6 +21,7 @@ const full: ShareState = {
   lineColours: { 0: "#C0392B", 1: "#2F5D8A", 39: "#4F7A5A" },
   emphasisColour: "#8B1A1A",
   mark: false,
+  readWithAi: true,
 };
 
 const wire = (patch: Record<string, unknown> = {}) =>
@@ -34,9 +35,9 @@ const ok = (payload: string) => {
 };
 
 describe("share links v2: round trip", () => {
-  it("writes the current version (3 since the mark arrived)", () => {
-    expect(SHARE_VERSION).toBe(3);
-    expect(ok(encodeShare(full)).version).toBe(3);
+  it("writes the current version (4 since Read with AI arrived)", () => {
+    expect(SHARE_VERSION).toBe(4);
+    expect(ok(encodeShare(full)).version).toBe(4);
   });
 
   it("restores EVERY field exactly, including the new ones", () => {
@@ -225,7 +226,7 @@ describe("share links v2: validation of the new fields", () => {
   });
 
   it("still calls any other version an unknown one, and recovers the poem", () => {
-    for (const v of [0, 4, 99, "2"]) {
+    for (const v of [0, 5, 99, "2"]) {
       expect(decodeShare(wire({ v }))).toMatchObject({ ok: false, reason: "version", poem: "keep me" });
     }
   });

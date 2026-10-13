@@ -19,6 +19,7 @@ const base: ShareState = {
   lineColours: { 1: "#2F5D8A" },
   emphasisColour: "#8B1A1A",
   mark: true,
+  readWithAi: true,
 };
 
 const ok = (payload: string) => {
@@ -32,9 +33,9 @@ const link = (v: number, extra: Record<string, unknown> = {}) =>
   );
 
 describe("share links v3: the made-with-Stanza mark", () => {
-  it("writes version 3", () => {
-    expect(SHARE_VERSION).toBe(3);
-    expect(ok(encodeShare(base)).version).toBe(3);
+  it("writes the current version, and the mark survives it", () => {
+    expect(SHARE_VERSION).toBe(4);
+    expect(ok(encodeShare(base)).version).toBe(4);
   });
 
   it.each([true, false])("round-trips mark = %s with every other field untouched", (mark) => {
@@ -61,6 +62,7 @@ describe("share links v3: the made-with-Stanza mark", () => {
       lineColours: { 0: "#112233" },
       emphasisColour: "#8B1A1A",
       mark: true,
+      readWithAi: true,
     });
   });
 
@@ -74,10 +76,10 @@ describe("share links v3: the made-with-Stanza mark", () => {
     expect(ok(link(1, { mk: 0 })).state.mark).toBe(true);
   });
 
-  it("a migrated state re-encodes as version 3 and round-trips", () => {
+  it("a migrated state re-encodes as the current version and round-trips", () => {
     const migrated = ok(link(2)).state;
     const again = ok(encodeShare(migrated));
-    expect(again.version).toBe(3);
+    expect(again.version).toBe(SHARE_VERSION);
     expect(again.state).toEqual(migrated);
   });
 

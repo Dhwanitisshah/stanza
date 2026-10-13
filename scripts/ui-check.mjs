@@ -470,6 +470,167 @@ try {
   const textSmall = await smallTargets();
   check("Text tab: every control (chips, colour fields, links) is at least 44px tall", textSmall.length === 0, textSmall.join("; "));
 
+  // ======== Phase 7a: Read with AI, privacy, headers, metadata ========
+  const readSwitch = `document.querySelector('button[role=switch][aria-label="Read with AI"]')`;
+  const switchOn = () => page.evaluate(`${readSwitch}?.getAttribute("aria-checked")`);
+  const recordRequests = () =>
+    page.evaluate(`(() => { window.__aiBodies = []; const real = window.fetch; window.fetch = (u, o) => { if (String(u).includes("/api/analyze")) window.__aiBodies.push(JSON.parse(o.body)); return real(u, o); }; })()`);
+  const requests = () => page.evaluate(`window.__aiBodies`);
+  const clipboardStub = () => page.evaluate(`navigator.clipboard.writeText = async (u) => { window.__copied = u; }`);
+
+  await page.navigate("about:blank", "true");
+  await page.navigate(url);
+  await page.waitFor(`!!document.querySelector("#landing-poem")`, "the landing page", 20000);
+  check("landing: Read with AI is ON by default", (await switchOn()) === "true");
+  const toggleLink = await page.evaluate(`(() => { const a = [...document.querySelectorAll("form a")].find((x) => x.textContent.includes("What happens to my poem")); return a && { href: new URL(a.href).pathname, target: a.target, rel: a.rel, height: a.getBoundingClientRect().height }; })()`);
+  check("landing: the toggle links to /privacy in a new tab (an unsent poem is not lost)", toggleLink?.href === "/privacy" && toggleLink.target === "_blank" && /noopener/.test(toggleLink.rel) && toggleLink.height >= 43.5, JSON.stringify(toggleLink));
+  const footerLink = await page.evaluate(`(() => { const a = document.querySelector('footer a[href="/privacy"]'); return a && a.getBoundingClientRect().height; })()`);
+  check("landing: the footer links to /privacy (44px target)", footerLink >= 43.5, String(footerLink));
+
+  // Off: the poem is never sent for AI, on the first read or any later one.
+  await recordRequests();
+  await page.evaluate(`${readSwitch}.click()`);
+  check("landing: the switch turns OFF", (await switchOn()) === "false");
+  await app.perform(LAMP);
+  await waitCanvas("poster read without the AI");
+  const firstBodies = await requests();
+  check("Read with AI OFF: the first read says skipAi: true", firstBodies.length >= 1 && firstBodies.every((b) => b.skipAi === true), JSON.stringify(firstBodies.map((b) => b.skipAi)));
+  check("editor: the switch is still OFF, next to the poem", (await switchOn()) === "false");
+  check("editor: the reading says the poem was not sent to Gemini", await page.evaluate(`document.body.innerText.includes("not sent to Gemini")`));
+  await clickBtn("body", "Read it again");
+  await page.waitFor(`(window.__aiBodies || []).length >= 2`, "the second read", 15000);
+  check('Read with AI OFF: "Read it again" also says skipAi: true', (await requests()).every((b) => b.skipAi === true));
+
+  // Back on: a fresh read may ask the AI.
+  await page.evaluate(`${readSwitch}.click()`);
+  check("editor: the switch turns ON again", (await switchOn()) === "true");
+  await clickBtn("body", "Read it again");
+  await page.waitFor(`(window.__aiBodies || []).length >= 3`, "the third read", 15000);
+  const bodies = await requests();
+  check('Read with AI ON: "Read it again" says skipAi: false', bodies[bodies.length - 1].skipAi === false, JSON.stringify(bodies.map((b) => b.skipAi)));
+
+  // The choice travels in the share link (v4) and comes back.
+  await page.evaluate(`${readSwitch}.click()`); // off
+  await sleep(300);
+  await clipboardStub();
+  await clickBtn("header", "Copy share link");
+  await page.waitFor(`!!window.__copied`, "the copied link");
+  const aiLink = await page.evaluate(`window.__copied`);
+  const wire = JSON.parse(lzString.decompressFromEncodedURIComponent(aiLink.split("#p=")[1]));
+  check("share link is version 4 and records Read with AI = off (ai: 0)", wire.v === 4 && wire.ai === 0, `v${wire.v} ai=${wire.ai}`);
+  await page.navigate("about:blank", "true");
+  await page.navigate(aiLink);
+  await waitCanvas("the poster from the Read-with-AI-off link");
+  await sleep(500);
+  check("opening that link: the editor's switch is OFF", (await switchOn()) === "false");
+  await page.navigate("about:blank", "true");
+  await page.navigate(`${url}/#p=${lzString.compressToEncodedURIComponent(JSON.stringify({ ...wire, ai: 1 }))}`);
+  await waitCanvas("the poster from the Read-with-AI-on link");
+  await sleep(500);
+  check("opening a link with ai: 1: the switch is ON", (await switchOn()) === "true");
+  const v3wire = { ...wire, v: 3 };
+  delete v3wire.ai; // a version 3 link has no ai key
+  await page.navigate("about:blank", "true");
+  await page.navigate(`${url}/#p=${lzString.compressToEncodedURIComponent(JSON.stringify(v3wire))}`);
+  await waitCanvas("the poster from a v3 link");
+  await sleep(500);
+  check("opening a version 3 link (no ai key): migrates with the switch ON", (await switchOn()) === "true");
+
+  // ---- CSP is ENFORCED, not just present: an injected inline script (no nonce) must not run.
+  const violationsBefore = page.cspViolations.length;
+  // An inline event handler is the classic injected-markup attack. (A script created from JavaScript is allowed by
+  // 'strict-dynamic' by design: it was made by a script that already had the nonce.)
+  await page.evaluate(`document.body.insertAdjacentHTML("beforeend", '<img src="data:," onerror="window.__injected = 1">')`);
+  await sleep(300);
+  const injectedRan = await page.evaluate(`window.__injected`);
+  const injectionReports = page.cspViolations.splice(violationsBefore); // reported on purpose: it must not count against the run
+  check("CSP blocks injected markup with an inline handler (it does not run, and the violation is reported)", injectedRan === undefined && injectionReports.length >= 1 && injectionReports.some((r) => /script-src/.test(`${r.directive ?? ""}${r.text ?? ""}`)), JSON.stringify(injectionReports[0]));
+
+  // ---- The response headers, and the pages around the app (plain HTTP against the production build)
+  const get = (path, init) => fetch(`${url}${path}`, init);
+  const home = await get("/");
+  const homeHtml = await home.text();
+  const csp = home.headers.get("content-security-policy") ?? "";
+  const directive = (name) => (csp.split(";").map((d) => d.trim()).find((d) => d.startsWith(`${name} `)) ?? "").slice(name.length + 1).split(/\s+/);
+  const nonce = /'nonce-([^']+)'/.exec(csp)?.[1];
+  check(
+    "CSP: default-src self; img-src self blob: data:; worker-src self blob:; connect-src self; frame-ancestors none",
+    directive("default-src").join() === "'self'" && directive("img-src").join(" ") === "'self' blob: data:" && directive("worker-src").join(" ") === "'self' blob:" && directive("connect-src").join() === "'self'" && directive("frame-ancestors").join() === "'none'",
+    csp.slice(0, 120),
+  );
+  check("CSP: scripts need the per-request nonce (no 'unsafe-inline', no 'unsafe-eval' in production)", !!nonce && !directive("script-src").some((s) => /unsafe/.test(s)) && directive("script-src").includes("'strict-dynamic'"), directive("script-src").join(" "));
+  check("CSP: object-src none, base-uri self, form-action self", directive("object-src").join() === "'none'" && directive("base-uri").join() === "'self'" && directive("form-action").join() === "'self'");
+  const scripts = [...homeHtml.matchAll(/<script\b[^>]*>/g)].map((m) => m[0]);
+  check(`CSP: every one of the page's ${scripts.length} <script> tags carries this request's nonce`, scripts.length > 0 && scripts.every((s) => s.includes(`nonce="${nonce}"`)));
+  const second = (await get("/")).headers.get("content-security-policy") ?? "";
+  check("CSP: a different nonce on every request", /'nonce-([^']+)'/.exec(second)?.[1] !== nonce);
+  check("header X-Content-Type-Options: nosniff", home.headers.get("x-content-type-options") === "nosniff");
+  check("header Referrer-Policy: strict-origin-when-cross-origin", home.headers.get("referrer-policy") === "strict-origin-when-cross-origin");
+  const permissions = home.headers.get("permissions-policy") ?? "";
+  check("header Permissions-Policy turns off camera, microphone and geolocation", ["camera=()", "microphone=()", "geolocation=()"].every((p) => permissions.includes(p)), permissions);
+  check("header X-Frame-Options: DENY and Strict-Transport-Security", home.headers.get("x-frame-options") === "DENY" && /max-age=\d+/.test(home.headers.get("strict-transport-security") ?? ""));
+  const apiHeaders = (await get("/api/analyze")).headers;
+  check("the API carries the same static headers", apiHeaders.get("x-content-type-options") === "nosniff" && apiHeaders.get("referrer-policy") === "strict-origin-when-cross-origin");
+
+  // metadata
+  const meta = (re) => re.exec(homeHtml)?.[1];
+  const pageTitle = meta(/<title>([^<]*)<\/title>/);
+  const description = meta(/<meta name="description" content="([^"]*)"/);
+  check("metadata: title and description are set", !!pageTitle && /Stanza/.test(pageTitle) && (description?.length ?? 0) > 50, `${pageTitle} | ${description?.slice(0, 40)}`);
+  check("metadata: canonical URL", /<link rel="canonical" href="https?:\/\/[^"]+"/.test(homeHtml));
+  check("metadata: theme-color and the web manifest", /<meta name="theme-color" content="#F4EFE6"/i.test(homeHtml) && /<link rel="manifest" href="\/manifest\.webmanifest"/.test(homeHtml));
+  check("metadata: Open Graph and Twitter large-image card", /property="og:image" content="https?:\/\/[^"]+\/og\.jpg"/.test(homeHtml) && /name="twitter:card" content="summary_large_image"/.test(homeHtml) && /property="og:image:width" content="1200"/.test(homeHtml));
+  check("metadata: favicon, SVG icon and Apple touch icon", /rel="icon"[^>]*href="\/favicon\.ico/.test(homeHtml) && /rel="icon"[^>]*href="\/icon\.svg/.test(homeHtml) && /rel="apple-touch-icon"[^>]*href="\/apple-icon\.png/.test(homeHtml));
+
+  const og = await page.evaluate(`new Promise((resolve) => { const i = new Image(); i.onload = () => resolve([i.naturalWidth, i.naturalHeight]); i.onerror = () => resolve(null); i.src = "/og.jpg"; })`);
+  const ogResponse = await get("/og.jpg");
+  const ogSize = (await ogResponse.arrayBuffer()).byteLength;
+  check("share image: /og.jpg is 1200 x 630, a JPEG under 300 KB", og?.[0] === 1200 && og?.[1] === 630 && ogResponse.headers.get("content-type") === "image/jpeg" && ogSize < 300_000, `${og} ${Math.round(ogSize / 1024)} KB`);
+  const manifest = await (await get("/manifest.webmanifest")).json();
+  const iconStatuses = await Promise.all(manifest.icons.map(async (icon) => (await get(icon.src)).status));
+  check("manifest: name, theme colour, and every icon loads", manifest.short_name === "Stanza" && manifest.theme_color === "#F4EFE6" && iconStatuses.length >= 3 && iconStatuses.every((s) => s === 200), JSON.stringify(iconStatuses));
+  const robots = await (await get("/robots.txt")).text();
+  const sitemap = await (await get("/sitemap.xml")).text();
+  check("robots.txt keeps /api/ out and points to the sitemap; the sitemap lists / and /privacy", /Disallow: \/api\//.test(robots) && /Sitemap: /.test(robots) && /<loc>[^<]*\/<\/loc>/.test(sitemap) && /\/privacy<\/loc>/.test(sitemap));
+
+  // the pages
+  const privacy = await get("/privacy");
+  const privacyHtml = await privacy.text();
+  const privacyText = privacyHtml.replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/g, " ").replace(/\s+/g, " ");
+  check("/privacy: 200 with its own title and canonical", privacy.status === 200 && /<title>Privacy · Stanza<\/title>/.test(privacyHtml) && /rel="canonical" href="[^"]*\/privacy"/.test(privacyHtml));
+  check("/privacy: says the poem goes to Gemini only if Read with AI is on", /only when .{0,12}Read with AI.{0,12} is on/.test(privacyText) && /never sent to Google/.test(privacyText));
+  check("/privacy: says Stanza's own server still sees the poem (and does not store it)", /own server still sees the poem/.test(privacyText) && /does not save poems/.test(privacyText));
+  check("/privacy: says photos never leave the device", /Photos never leave your device/.test(privacyText) && /not uploaded/.test(privacyText));
+  check("/privacy: says no accounts, no cookies, and what analytics does", /no accounts/i.test(privacyText) && /no cookies/i.test(privacyText) && /Page counting is off/.test(privacyText));
+  check("/privacy: says a share link contains the poem and anyone with it can read it", /A share link contains your poem/.test(privacyText) && /Anyone who has the link can read the whole poem/.test(privacyText));
+  const notFound = await get("/this-page-does-not-exist");
+  const notFoundHtml = await notFound.text();
+  check("404: a real 404 status with a styled page and a Start again link", notFound.status === 404 && /blank line/.test(notFoundHtml) && /href="\/"[^>]*>Start again</.test(notFoundHtml));
+
+  // the API, end to end through the production server
+  const post = (body, headers = {}) => get("/api/analyze", { method: "POST", headers: { "content-type": "application/json", ...headers }, body });
+  const getApi = await get("/api/analyze");
+  check("API: GET is 405 with Allow: POST", getApi.status === 405 && getApi.headers.get("allow") === "POST");
+  check("API: a non-JSON content type is 415", (await post("poem=hi", { "content-type": "text/plain" })).status === 415);
+  check("API: a body over 16 KB is 413", (await post(JSON.stringify({ poem: "a".repeat(17_000) }))).status === 413);
+  check("API: a normal request still works", (await post(JSON.stringify({ poem: LAMP, skipAi: true }))).status === 200);
+
+  // The privacy page and the 404 page, looked at in the browser: nothing under 44px.
+  for (const path of ["/privacy", "/nothing-here"]) {
+    await page.navigate("about:blank", "true");
+    await page.navigate(`${url}${path}`, 'document.readyState === "complete"');
+    await sleep(500);
+    const small = await smallTargets();
+    check(`${path} in the browser: every link and button is at least 44px tall`, small.length === 0, small.join("; "));
+  }
+
+  // Back to a fresh editor for the checks that follow.
+  await page.navigate("about:blank", "true");
+  await page.navigate(url);
+  await app.perform(LAMP);
+  await waitCanvas("poster");
+  await sleep(500);
+
   // ---- Touch targets and labels
   const small = await page.evaluate(`(() => {
     const out = [];
@@ -485,6 +646,7 @@ try {
   check("every button and field has a name", unlabeled === 0, String(unlabeled));
   const consoleErrors = page.consoleLines.filter((l) => l.type === "error" || l.type === "exception");
   check("no console errors", consoleErrors.length === 0, JSON.stringify(consoleErrors.slice(0, 3)));
+  check("ZERO Content-Security-Policy violations in the whole run (landing, editor, share links, privacy, 404)", page.cspViolations.length === 0, JSON.stringify(page.cspViolations.slice(0, 3)));
 
   page.close();
 

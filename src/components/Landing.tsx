@@ -6,7 +6,8 @@ import { MOOD_PRESETS } from "@/lib/moods/presets";
 import { poemProblem } from "@/lib/editor/analyzeClient";
 import { SAMPLES } from "@/lib/samples";
 import { Logo } from "./Logo";
-import { BUTTON_PRIMARY, BUTTON_SECONDARY, Eyebrow, FIELD } from "./ui";
+import { SiteFooter } from "./SiteFooter";
+import { BUTTON_PRIMARY, BUTTON_SECONDARY, Eyebrow, FIELD, ReadWithAiSwitch } from "./ui";
 
 const LAMP_LINES = ["The lamp burns low beside the door,", "the kettle hums a quiet tune,", "the rain has found the wooden floor,", "and somewhere far, a patient moon."];
 
@@ -63,7 +64,7 @@ export function Landing({
   initialPoem = "",
   initialTitle = "",
 }: {
-  onPerform: (poem: string, title: string) => void;
+  onPerform: (poem: string, title: string, readWithAi: boolean) => void;
   /** A friendly message, e.g. about a share link that could not be opened. */
   banner?: string;
   initialPoem?: string;
@@ -72,6 +73,7 @@ export function Landing({
   const [poem, setPoem] = useState(initialPoem);
   const [title, setTitle] = useState(initialTitle);
   const [problem, setProblem] = useState<string | null>(null);
+  const [readWithAi, setReadWithAi] = useState(true);
   const poemRef = useRef<HTMLTextAreaElement>(null);
 
   function perform() {
@@ -81,7 +83,7 @@ export function Landing({
       poemRef.current?.focus();
       return;
     }
-    onPerform(poem, title.trim());
+    onPerform(poem, title.trim(), readWithAi);
   }
 
   function fillSample(id: string) {
@@ -166,6 +168,8 @@ export function Landing({
                 )}
               </div>
 
+              <ReadWithAiSwitch checked={readWithAi} onChange={setReadWithAi} />
+
               <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
                 <button type="submit" className={`${BUTTON_PRIMARY} px-6`}>
                   Perform it
@@ -210,6 +214,8 @@ export function Landing({
           </ol>
         </section>
       </main>
+
+      <SiteFooter />
     </div>
   );
 }

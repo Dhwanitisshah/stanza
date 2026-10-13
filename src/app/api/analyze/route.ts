@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
 import { buildAnalysis } from "@/lib/ai/pipeline";
+import { createDailyCap } from "@/lib/ai/guard";
 import { clientIp, createRateLimiter } from "@/lib/ai/rateLimit";
+import { isJsonContentType, readBodyLimited } from "@/lib/ai/requestBody";
 
 // The CMU dictionary is ~4.7 MB: keep this on the Node.js runtime, never Edge.
 export const runtime = "nodejs";
+// Gemini gets 8 s (GEMINI_TIMEOUT_MS) plus the prosody work; 15 s is a hard ceiling so a hung call can never run up the bill.
+export const maxDuration = 15;
 
 const MAX_CHARS = 2000;
 const MAX_LINES = 40;
-const MAX_BODY_CHARS = 20_000; // refuse absurd bodies before parsing them
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 60_000;
 
 const limiter = createRateLimiter(RATE_LIMIT, RATE_WINDOW_MS);
+// A second, coarser guard on top of the per-IP limiter: how many Gemini calls this instance makes per day.
+const dailyCap = createDailyCap();
 
 // Loaded once per server instance, at module scope. The dictionary parse is the slow part of a cold start.
 const prosodyReady = (async () => {
@@ -21,7 +26,17 @@ const prosodyReady = (async () => {
   return prosody;
 })();
 
-type ErrorCode = "bad_json" | "invalid_request" | "empty_poem" | "poem_too_long" | "too_many_lines" | "rate_limited" | "internal";
+type ErrorCode =
+  | "bad_json"
+  | "invalid_request"
+  | "empty_poem"
+  | "poem_too_long"
+  | "too_many_lines"
+  | "rate_limited"
+  | "method_not_allowed"
+  | "unsupported_media_type"
+  | "payload_too_large"
+  | "internal";
 
 function fail(status: number, code: ErrorCode, message: string, headers?: HeadersInit) {
   return NextResponse.json({ error: { code, message } }, { status, headers });
@@ -65,10 +80,20 @@ export async function POST(request: Request) {
     return fail(429, "rate_limited", "Too many requests. Please wait a minute and try again.", { "Retry-After": "60" });
   }
 
-  const text = await request.text();
-  if (text.length > MAX_BODY_CHARS) {
-    return fail(400, "poem_too_long", `That request is too large. Poems can be up to ${MAX_CHARS} characters.`);
+  if (!isJsonContentType(request.headers.get("content-type"))) {
+    log({ status: 415, latencyMs: latency() });
+    return fail(415, "unsupported_media_type", 'Send the poem as JSON with the header "Content-Type: application/json".');
   }
+
+  const read = await readBodyLimited(request);
+  if (!read.ok) {
+    const tooLarge = read.reason === "too_large";
+    log({ status: tooLarge ? 413 : 400, latencyMs: latency() });
+    return tooLarge
+      ? fail(413, "payload_too_large", `That request is too large. Poems can be up to ${MAX_CHARS} characters.`)
+      : fail(400, "bad_json", "The request body could not be read.");
+  }
+  const text = read.text;
   let body: unknown;
   try {
     body = JSON.parse(text);
@@ -92,7 +117,7 @@ export async function POST(request: Request) {
     }
 
     const prosody = toPublicProsody(result);
-    const { analysis, source, reason } = await buildAnalysis(prosody, { skipAi: parsed.skipAi });
+    const { analysis, source, reason } = await buildAnalysis(prosody, { skipAi: parsed.skipAi, dailyCap });
 
     log({ status: 200, source, ...(reason ? { reason } : {}), lines: prosody.stanzas.reduce((n, s) => n + s.lines.length, 0), latencyMs: latency() });
     return NextResponse.json({ prosody, analysis, source });
@@ -102,3 +127,17 @@ export async function POST(request: Request) {
     return fail(500, "internal", "Something went wrong reading that poem. Please try again.");
   }
 }
+
+// Only POST is allowed. Every other method gets a clear 405 with an Allow header (Next would otherwise answer some of
+// them with an empty body, and handle OPTIONS and HEAD on its own).
+function methodNotAllowed() {
+  return fail(405, "method_not_allowed", "Use POST with a JSON body.", { Allow: "POST" });
+}
+export {
+  methodNotAllowed as GET,
+  methodNotAllowed as HEAD,
+  methodNotAllowed as PUT,
+  methodNotAllowed as PATCH,
+  methodNotAllowed as DELETE,
+  methodNotAllowed as OPTIONS,
+};

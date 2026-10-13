@@ -1,7 +1,7 @@
 "use client";
 
 import type { AnalyzeResponse } from "@/lib/editor/analyzeClient";
-import { BUTTON_PRIMARY, Eyebrow, FIELD } from "./ui";
+import { BUTTON_PRIMARY, Eyebrow, FIELD, ReadWithAiSwitch } from "./ui";
 
 /** One colour per rhyme letter, chosen to stay readable on the paper background. */
 const LETTER_COLOURS = ["#b23a1e", "#2f5d8a", "#4f7a5a", "#7a4a8a", "#8a6a1e", "#1f6b6b"];
@@ -12,10 +12,10 @@ export interface ReadStats {
   seconds: number;
 }
 
-function readLabel(stats: ReadStats | null): string | null {
+function readLabel(stats: ReadStats | null, readWithAi: boolean): string | null {
   if (!stats) return null;
   if (stats.source === "gemini") return `Read by Gemini in ${stats.seconds.toFixed(1)} s`;
-  if (stats.source === "skipped") return "Restored from a share link";
+  if (stats.source === "skipped") return readWithAi ? "Restored from a share link" : "Read by Stanza's built-in reader. Your poem was not sent to Gemini.";
   return "Read by Stanza's built-in reader (Gemini wasn't available)";
 }
 
@@ -31,6 +31,8 @@ export function PoemPanel({
   stats,
   edited,
   onRead,
+  readWithAi,
+  onReadWithAi,
 }: {
   poem: string;
   onPoem: (value: string) => void;
@@ -43,6 +45,8 @@ export function PoemPanel({
   stats: ReadStats | null;
   edited: boolean;
   onRead: () => void;
+  readWithAi: boolean;
+  onReadWithAi: (on: boolean) => void;
 }) {
   const prosody = response?.prosody;
   const lines = prosody?.stanzas.flatMap((s) => s.lines) ?? [];
@@ -90,6 +94,7 @@ export function PoemPanel({
       </div>
 
       <div className="flex flex-col gap-2">
+        <ReadWithAiSwitch checked={readWithAi} onChange={onReadWithAi} />
         <button type="button" onClick={onRead} disabled={busy} className={`${BUTTON_PRIMARY} self-start`}>
           {busy ? "Reading..." : "Read it again"}
         </button>
@@ -99,7 +104,7 @@ export function PoemPanel({
             {error}
           </p>
         )}
-        {!error && <p className="text-xs text-muted">{busy ? "Listening to the poem..." : readLabel(stats)}</p>}
+        {!error && <p className="text-xs text-muted">{busy ? "Listening to the poem..." : readLabel(stats, readWithAi)}</p>}
       </div>
 
       {response && (

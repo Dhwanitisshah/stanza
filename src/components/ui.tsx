@@ -2,13 +2,11 @@
 
 // Small building blocks shared by the landing page and the editor. Every control is a real <button> or <input>
 // with a visible label, a 44px touch target, and the accent focus ring from globals.css.
+import Link from "next/link";
 import type { ReactNode } from "react";
 
-export const BUTTON_BASE =
-  "inline-flex min-h-11 items-center justify-center rounded-md px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45";
-export const BUTTON_PRIMARY = `${BUTTON_BASE} bg-ink text-paper hover:bg-black`;
-export const BUTTON_SECONDARY = `${BUTTON_BASE} border border-ink/70 bg-transparent text-ink hover:bg-ink/5`;
-export const FIELD = "w-full rounded-md border border-rule bg-field px-3 text-ink placeholder:text-muted/80";
+// The class strings live in styles.ts (a plain module) so server components can use them too.
+export { BUTTON_BASE, BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD } from "./styles";
 
 export function Eyebrow({ children, optional }: { children: ReactNode; optional?: string }) {
   return (
@@ -67,7 +65,7 @@ export function Segmented<T extends string>({
 }
 
 /** An on/off switch with a label. */
-export function Switch({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (value: boolean) => void; hint?: string }) {
+export function Switch({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (value: boolean) => void; hint?: ReactNode }) {
   return (
     <div className="flex min-h-11 items-center justify-between gap-3">
       <span className="text-sm">
@@ -87,6 +85,28 @@ export function Switch({ label, checked, onChange, hint }: { label: string; chec
         </span>
       </button>
     </div>
+  );
+}
+
+/**
+ * "Read with AI": the one switch that decides whether a poem may leave this server for Google Gemini. Same words on the
+ * landing page and in the editor, with a link to the privacy page (new tab, so an unsaved poem is not lost).
+ */
+export function ReadWithAiSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <Switch
+      label="Read with AI"
+      checked={checked}
+      onChange={onChange}
+      hint={
+        <>
+          {checked ? "Your poem is sent to Google Gemini to pick the mood." : "Your poem is not sent to Google. Stanza's built-in reader picks the mood."}{" "}
+          <Link href="/privacy" target="_blank" rel="noopener" className="inline-flex min-h-11 items-center underline underline-offset-4">
+            What happens to my poem?
+          </Link>
+        </>
+      }
+    />
   );
 }
 
