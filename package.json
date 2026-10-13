@@ -19,16 +19,16 @@
     "export-check": "node scripts/export-check.mjs"
   },
   "dependencies": {
-    "@google/genai": "^2.27.0",
+    "@google/genai": "^2.29.1",
     "cmu-pronouncing-dictionary": "^3.0.0",
     "lz-string": "^1.5.0",
-    "mediabunny": "^1.61.1",
-    "next": "16.3.8",
+    "mediabunny": "^1.61.4",
+    "next": "^16.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
     "syllable": "^5.0.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -36,9 +36,9 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.8",
+    "eslint-config-next": "^16.4.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.4"
   }
 }
